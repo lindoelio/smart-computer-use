@@ -1,0 +1,107 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: shellcheck and bash -n
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(skills/smart-computer-use/scripts/*.sh)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "no shell scripts found" >&2
+            exit 1
+          fi
+          shellcheck "${files[@]}"
+          for file in "${files[@]}"; do
+            bash -n "${file}"
+          done
+
+      - name: Validate SKILL.md frontmatter
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path("skills/smart-computer-use/SKILL.md")
+          text = path.read_text(encoding="utf-8")
+          if not text.startswith("---\n"):
+              sys.exit("SKILL.md must start with YAML frontmatter")
+          end = text.find("\n---\n", 4)
+          if end == -1:
+              sys.exit("SKILL.md frontmatter is not closed")
+          front = text[4:end]
+          data = {}
+          key = None
+          buf = []
+
+          def finish():
+              if key is not None:
+                  data[key] = " ".join(part for part in buf if part).strip()
+
+          for raw in front.splitlines():
+              if raw.startswith("  ") or raw.startswith("\t"):
+                  if key is None:
+                      sys.exit(f"indented line outside a key: {raw}")
+                  buf.append(raw.strip())
+                  continue
+              if not raw.strip():
+                  continue
+              if ":" not in raw:
+                  sys.exit(f"bad frontmatter line: {raw}")
+              finish()
+              name, value = raw.split(":", 1)
+              key = name.strip()
+              value = value.strip()
+              if value in {">", "|", ""}:
+                  buf = []
+              else:
+                  buf = [value]
+                  finish()
+                  key = None
+                  buf = []
+          finish()
+
+          def scalar(name):
+              value = data.get(name, "")
+              if value.startswith(("'", '"')) and value.endswith(("'", '"')) and len(value) >= 2:
+                  return value[1:-1]
+              return value
+
+          problems = []
+          if scalar("name") != "smart-computer-use":
+              problems.append(f"name is {scalar('name')!r}")
+          if scalar("license") != "MIT":
+              problems.append(f"license is {scalar('license')!r}")
+          description = scalar("description")
+          if len(description) < 40:
+              problems.append("description is missing or too short")
+          compatibility = scalar("compatibility")
+          for needle in ("computer-use", "scripts/setup.sh", "Laya"):
+              if needle not in compatibility:
+                  problems.append(f"compatibility does not mention {needle}")
+          version = scalar("version")
+          if not version:
+              for raw in front.splitlines():
+                  stripped = raw.strip()
+                  if stripped.startswith("version:"):
+                      version = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+                      break
+          if version != "0.1.0":
+              problems.append(f"metadata.version is {version!r}")
+          if "metadata" not in front:
+              problems.append("metadata block is missing")
+          if problems:
+              sys.exit("SKILL.md frontmatter:\n- " + "\n- ".join(problems))
+          print("SKILL.md frontmatter ok")
+          PY

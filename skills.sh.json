@@ -1,0 +1,11 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "Computer use",
+      "description": "Control the desktop through the computer-use CLI, with an optional local Laya decision model.",
+      "skills": ["smart-computer-use"]
+    }
+  ]
+}
