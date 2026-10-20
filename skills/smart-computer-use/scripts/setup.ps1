@@ -13,10 +13,14 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $MinVersion = @(0, 1, 0)
-$RepoUrl = 'https://github.com/lindoelio/computer-use'
+$PreferredVersion = @(0, 2, 0)
+$Repo = 'lindoelio/computer-use'
+$RepoUrl = "https://github.com/$Repo"
+$ApiUrl = "https://api.github.com/repos/$Repo"
 $AssetName = 'computer-use-windows-x64.zip'
-$InstallDir = Join-Path $HOME '.local\bin'
+$InstallDir = if ($env:COMPUTER_USE_INSTALL_DIR) { $env:COMPUTER_USE_INSTALL_DIR } else { Join-Path $HOME '.local\bin' }
 $BinaryName = 'computer-use.exe'
+$script:ResolvedTag = $null
 
 function Show-Usage {
     @"
@@ -29,12 +33,20 @@ Install the computer-use CLI into `$HOME\.local\bin.
   -Help       Show this help.
 
 Environment:
-  COMPUTER_USE_VERSION   Release tag to pin, for example v0.1.0 or 0.1.0.
-                         Default: the latest GitHub release.
+  COMPUTER_USE_VERSION      Release tag to pin, for example v0.2.0 or 0.2.0.
+                            Default: v0.2.0 when that release exists, otherwise
+                            the latest GitHub release.
+  COMPUTER_USE_INSTALL_DIR  Install directory. Default: ~\.local\bin.
+
+Release selection:
+  v0.2.0 is preferred. The script probes the GitHub releases API (no auth
+  required) and installs v0.2.0 when it is published. When it is not, it falls
+  back to the latest published release instead of failing.
 
 If computer-use is already on PATH or in `$HOME\.local\bin at an acceptable
 version, the download is skipped. Acceptable means >= 0.1.0, or exactly
-COMPUTER_USE_VERSION when that variable is set.
+COMPUTER_USE_VERSION when that variable is set. A binary older than v0.2.0
+still installs, with a warning that the newer commands need v0.2.0.
 
 The release asset is computer-use-windows-x64.zip with a matching .sha256
 file. Checksums are verified with Get-FileHash. On failure the script tries
@@ -124,12 +136,54 @@ function Get-InstalledVersion {
 function Get-ReleaseBase {
     $tag = $env:COMPUTER_USE_VERSION
     if ([string]::IsNullOrWhiteSpace($tag)) {
+        if ($script:ResolvedTag) {
+            return "$RepoUrl/releases/download/$script:ResolvedTag"
+        }
         return "$RepoUrl/releases/latest/download"
     }
     if ($tag -notmatch '^v') {
         $tag = "v$tag"
     }
     return "$RepoUrl/releases/download/$tag"
+}
+
+# Probe the GitHub releases API for one tag. Public endpoint, no auth.
+# Returns $true when the release exists. A missing release, a rate limit, or
+# no network all look the same to the caller: fall back to the latest.
+function Test-ReleaseTagPublished {
+    param([string]$Tag)
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    } catch {
+        Write-Log "could not set TLS 1.2 explicitly; continuing"
+    }
+    $headers = @{ 'Accept' = 'application/vnd.github+json' }
+    try {
+        $null = Invoke-WebRequest -Uri "$ApiUrl/releases/tags/$Tag" -Headers $headers `
+            -UseBasicParsing -TimeoutSec 15
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Resolve-ReleaseTag {
+    if ($env:COMPUTER_USE_VERSION -or $script:ResolvedTag) { return }
+    $tag = 'v{0}.{1}.{2}' -f $PreferredVersion[0], $PreferredVersion[1], $PreferredVersion[2]
+    if (Test-ReleaseTagPublished $tag) {
+        $script:ResolvedTag = $tag
+        Write-Log "release $tag is published; installing it"
+    } else {
+        Write-Log "release $tag is not published yet; using the latest release"
+    }
+}
+
+function Write-WarningIfOlderThanPreferred {
+    param($Got)
+    if ($null -eq $Got) { return }
+    if (Test-VersionAtLeast $Got $PreferredVersion) { return }
+    Write-SetupWarning ("computer-use {0}.{1}.{2} is installed. tree --element targeting, --app/--window, --tier, policy check, batch, and browser need {3}.{4}.{5}; re-run setup once it is released, or cargo install computer-use --locked." -f `
+        $Got[0], $Got[1], $Got[2], $PreferredVersion[0], $PreferredVersion[1], $PreferredVersion[2])
 }
 
 function Get-ExpectedHash {
@@ -195,7 +249,7 @@ function Show-ManualInstall {
     Write-SetupWarning @"
 Could not install the computer-use CLI.
 Download computer-use-windows-x64.zip from ${RepoUrl}/releases and verify the matching .sha256 file.
-Or, with Rust 1.81 or newer: cargo install computer-use --locked
+Or, with Rust 1.91 or newer: cargo install computer-use --locked
 Put computer-use.exe on PATH, for example $InstallDir.
 "@
 }
@@ -246,6 +300,7 @@ if ($Help) {
 }
 
 $needInstall = $true
+Resolve-ReleaseTag
 $existing = Get-ComputerUseCommand
 if ($existing) {
     $current = Get-InstalledVersion $existing
@@ -298,6 +353,8 @@ if ($resolved) {
     if (-not (Test-VersionAcceptable $resolvedVersion)) {
         Write-SetupWarning "computer-use at $resolved is still not an acceptable version"
         $status = 1
+    } else {
+        Write-WarningIfOlderThanPreferred $resolvedVersion
     }
 } else {
     $status = 1

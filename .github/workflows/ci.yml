@@ -97,7 +97,7 @@ jobs:
                   if stripped.startswith("version:"):
                       version = stripped.split(":", 1)[1].strip().strip('"').strip("'")
                       break
-          if version != "0.1.0":
+          if version != "0.2.0":
               problems.append(f"metadata.version is {version!r}")
           if "metadata" not in front:
               problems.append("metadata block is missing")
@@ -105,3 +105,26 @@ jobs:
               sys.exit("SKILL.md frontmatter:\n- " + "\n- ".join(problems))
           print("SKILL.md frontmatter ok")
           PY
+
+      - name: Check relative links in the skill docs
+        run: |
+          python3 - <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          skill = Path("skills/smart-computer-use")
+          pattern = re.compile(r"\[[^\]]*\]\((?!https?:|#)([^)#]+)(?:#[^)]*)?\)")
+          missing = []
+          for doc in sorted(skill.rglob("*.md")):
+              for match in pattern.finditer(doc.read_text(encoding="utf-8")):
+                  target = (doc.parent / match.group(1)).resolve()
+                  if not target.exists():
+                      missing.append(f"{doc}: {match.group(1)}")
+          if missing:
+              sys.exit("broken relative links:\n- " + "\n- ".join(missing))
+          print("relative links ok")
+          PY
+
+      - name: Validate skills.sh.json
+        run: python3 -c "import json;json.load(open('skills.sh.json'))"

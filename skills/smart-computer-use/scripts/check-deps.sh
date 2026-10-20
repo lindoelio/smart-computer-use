@@ -6,6 +6,7 @@ JSON=0
 INSTALL_DIR="${HOME}/.local/bin"
 BINARY_NAME="computer-use"
 TMP_ROOT=""
+PREFERRED_VERSION="0.2.0"
 
 CHECK_NAMES=()
 CHECK_STATUS=()
@@ -173,6 +174,41 @@ read_version() {
   out=${out##* }
   out=${out#v}
   printf '%s\n' "${out}"
+}
+
+# True when $1 is a parseable version strictly older than $2.
+version_older_than() {
+  local have=$1 want=$2
+  local -a hv=() wv=()
+  local i hn wn max
+  [[ -n "${have}" ]] || return 1
+  IFS='.' read -r -a hv <<< "${have}" || true
+  IFS='.' read -r -a wv <<< "${want}" || true
+  max=${#hv[@]}
+  if [[ ${#wv[@]} -gt ${max} ]]; then
+    max=${#wv[@]}
+  fi
+  i=0
+  while [[ ${i} -lt ${max} ]]; do
+    hn=0
+    wn=0
+    if [[ ${i} -lt ${#hv[@]} ]]; then
+      hn=${hv[${i}]//[^0-9]/}
+      hn=${hn:-0}
+    fi
+    if [[ ${i} -lt ${#wv[@]} ]]; then
+      wn=${wv[${i}]//[^0-9]/}
+      wn=${wn:-0}
+    fi
+    if [[ ${hn} -lt ${wn} ]]; then
+      return 0
+    fi
+    if [[ ${hn} -gt ${wn} ]]; then
+      return 1
+    fi
+    i=$((i + 1))
+  done
+  return 1
 }
 
 lower_copy() {
@@ -842,7 +878,11 @@ main() {
     else
       version=""
     fi
-    add_check "cli" "ok" "computer-use ${version:-unknown} at ${cli_path}"
+    if [[ -n "${version}" ]] && version_older_than "${version}" "${PREFERRED_VERSION}"; then
+      add_check "cli" "ok" "computer-use ${version} at ${cli_path}. ${PREFERRED_VERSION} is preferred: tree --element targeting, --app/--window, --tier, policy check, batch, and browser need it. Re-run scripts/setup.sh once it is released."
+    else
+      add_check "cli" "ok" "computer-use ${version:-unknown} at ${cli_path}"
+    fi
   else
     add_check "cli" "missing" "computer-use was not found on PATH or in ${INSTALL_DIR}. Run scripts/setup.sh."
   fi

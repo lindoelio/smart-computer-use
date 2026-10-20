@@ -4,14 +4,18 @@
 set -euo pipefail
 
 MIN_VERSION="0.1.0"
-REPO_URL="https://github.com/lindoelio/computer-use"
-INSTALL_DIR="${HOME}/.local/bin"
+PREFERRED_VERSION="0.2.0"
+REPO="lindoelio/computer-use"
+REPO_URL="https://github.com/${REPO}"
+API_URL="https://api.github.com/repos/${REPO}"
+INSTALL_DIR="${COMPUTER_USE_INSTALL_DIR:-${HOME}/.local/bin}"
 BINARY_NAME="computer-use"
 
 VERBOSE=0
 WITH_LAYA=0
 ASSET_NAME=""
 TMP_ROOT=""
+RESOLVED_TAG=""
 
 usage() {
   cat <<'EOF'
@@ -24,12 +28,20 @@ Install the computer-use CLI into ~/.local/bin.
   --help        Show this help.
 
 Environment:
-  COMPUTER_USE_VERSION   Release tag to pin, for example v0.1.0 or 0.1.0.
-                         Default: the latest GitHub release.
+  COMPUTER_USE_VERSION      Release tag to pin, for example v0.2.0 or 0.2.0.
+                            Default: v0.2.0 when that release exists, otherwise
+                            the latest GitHub release.
+  COMPUTER_USE_INSTALL_DIR  Install directory. Default: ~/.local/bin.
+
+Release selection:
+  v0.2.0 is preferred. The script probes the GitHub releases API (no auth
+  required) and installs v0.2.0 when it is published. When it is not, the
+  script falls back to the latest published release instead of failing.
 
 If computer-use is already on PATH or in ~/.local/bin at an acceptable
 version, the download is skipped. Acceptable means >= 0.1.0, or exactly
-COMPUTER_USE_VERSION when that variable is set.
+COMPUTER_USE_VERSION when that variable is set. A binary older than v0.2.0
+still installs, with a warning that the newer commands need v0.2.0.
 
 Supported release assets:
   darwin arm64  -> computer-use-macos-arm64.tar.gz
@@ -237,9 +249,51 @@ release_base() {
       *) tag="v${tag}" ;;
     esac
     printf '%s\n' "${REPO_URL}/releases/download/${tag}"
+  elif [[ -n "${RESOLVED_TAG}" ]]; then
+    printf '%s\n' "${REPO_URL}/releases/download/${RESOLVED_TAG}"
   else
     printf '%s\n' "${REPO_URL}/releases/latest/download"
   fi
+}
+
+# Probe the GitHub releases API for one tag. Public endpoint, no auth.
+# Prints the tag on a 200 and returns 1 on anything else. A missing release,
+# a rate limit, or no network all look the same to the caller: fall back.
+probe_release_tag() {
+  local tag=$1 code
+  if ! command -v curl >/dev/null 2>&1; then
+    return 1
+  fi
+  if ! code=$(curl -fsSL -o /dev/null -w '%{http_code}' --max-time 15 \
+    -H 'Accept: application/vnd.github+json' \
+    "${API_URL}/releases/tags/${tag}" 2>/dev/null); then
+    return 1
+  fi
+  if [[ "${code}" != "200" ]]; then
+    return 1
+  fi
+  printf '%s\n' "${tag}"
+}
+
+resolve_release_tag() {
+  local tag
+  if [[ -n "${COMPUTER_USE_VERSION:-}" || -n "${RESOLVED_TAG}" ]]; then
+    return 0
+  fi
+  if tag=$(probe_release_tag "v${PREFERRED_VERSION}"); then
+    RESOLVED_TAG="${tag}"
+    log "release ${RESOLVED_TAG} is published; installing it"
+    return 0
+  fi
+  log "release v${PREFERRED_VERSION} is not published yet; using the latest release"
+}
+
+warn_if_older_than_preferred() {
+  local ver=$1
+  if [[ -z "${ver}" ]] || version_ge "${ver}" "${PREFERRED_VERSION}"; then
+    return 0
+  fi
+  warn "computer-use ${ver} is installed. tree --element targeting, --app/--window, --tier, policy check, batch, and browser need ${PREFERRED_VERSION}; re-run setup once it is released, or cargo install computer-use --locked."
 }
 
 download_to() {
@@ -400,7 +454,7 @@ Download a release from:
 Assets: computer-use-linux-x64.tar.gz, computer-use-macos-arm64.tar.gz,
 computer-use-windows-x64.zip. Each has a matching .sha256 file.
 
-Or, with Rust 1.81 or newer:
+Or, with Rust 1.91 or newer:
   cargo install computer-use --locked
 
 Put the computer-use binary on PATH, for example ${INSTALL_DIR}.
@@ -458,6 +512,8 @@ main() {
   TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/smart-computer-use.XXXXXX")
   trap cleanup EXIT
 
+  resolve_release_tag
+
   need_install=1
   status=0
   if bin=$(find_binary); then
@@ -489,6 +545,8 @@ main() {
       if ! version_is_acceptable "${ver}"; then
         warn "computer-use ${ver} at ${bin} is still not an acceptable version"
         status=1
+      else
+        warn_if_older_than_preferred "${ver}"
       fi
     fi
   else

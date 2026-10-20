@@ -1,12 +1,14 @@
-# computer-use CLI
+# computer-use CLI reference
 
 Binary name: `computer-use` (`computer-use.exe` on Windows).
 
-Source and releases: <https://github.com/lindoelio/computer-use>
+Source of truth and releases: <https://github.com/lindoelio/computer-use>
 
-Install from this skill with `scripts/setup.sh` or `scripts/setup.ps1`. A manual install is `cargo install computer-use --locked` (Rust 1.81 or newer).
+Upstream reference: [`docs/CLI.md`](https://github.com/lindoelio/computer-use/blob/main/docs/CLI.md). That document is generated from the binary's `--help` and the `Action`, `ComputerError`, and `CallContext` types. When this file and the binary disagree, the binary is right.
 
-Every action writes one JSON object to stdout and a trailing newline. `--help` and `--version` stay human-readable and exit 0. `--version` looks like `computer-use 0.1.0`.
+Install from this skill with `scripts/setup.sh` (or `scripts/setup.ps1`). Manual install is `cargo install computer-use --locked` (Rust 1.91 or newer).
+
+Every action writes one JSON object to stdout. `--help` and `--version` are human-readable and exit 0. `--version` prints `computer-use <version>`.
 
 ```json
 {"ok":true,"waited_ms":10}
@@ -16,289 +18,476 @@ Every action writes one JSON object to stdout and a trailing newline. `--help` a
 {"ok":false,"error":{"code":"invalid_arguments","message":"invalid arguments: wait requires ms, seconds, or both"}}
 ```
 
+## Version compatibility
+
+This skill targets **0.2.0**. Anything not listed in the "Works on 0.1.0" column needs 0.2.0 and fails with `invalid_arguments` (unknown subcommand, exit 2) or `unsupported` on an older binary.
+
+| Surface | Works on 0.1.0 | Needs 0.2.0 |
+| --- | --- | --- |
+| Subcommands | `screenshot` `click` `move` `type` `key` `scroll` `get-state` `wait` `displays` `serve` `exec` | `triple-click` `press` `set-value` `select-text` `perform-action` `scroll-to` `focus` `drag` `mouse-down` `mouse-up` `hold-key` `clipboard` `zoom` `list-apps` `list-windows` `launch` `activate` `quit` `tree` `ocr` `menu` `apple-event` `shortcuts` `dock` `spaces` `policy` `pause` `resume` `doctor` `isolation` `session` `overlay` `browser` |
+| Global flags | `--pretty` `--json` | `--app` `--window` `--element` `--require-visible` `--diff` `--full` `--session` `--state` `--screenshot` `--coord` `--adapter` `--policy` `--confirm-cmd` `--tier` `--synthetic-focus` `--allow-foreground` `--require-background` `--no-overlay` `--cdp` `--cdp-url` `--display` `--exec` |
+| Error codes | `invalid_arguments` `execution_failed` `io_error` `unsupported` | `app_not_found` `window_not_found` `element_not_found` `stale_element` `permission_required` `policy_denied` `confirm_required` `confirm_denied` `blocked_url` `paused` `cdp_unavailable` `display_unavailable` |
+
+Without element targeting you can only click blind coordinates. The 0.2.0 main loop in [SKILL.md](../SKILL.md) depends on `tree`, `--element`, and `--app`/`--window`. Run `bash scripts/setup.sh` and confirm with `computer-use --version` before relying on them.
+
 ## Exit codes
 
 | Code | When |
 | --- | --- |
-| 0 | The action returned `"ok": true`. Also `--help` and `--version`. `serve` and `--json` exit 0 on a clean end of stdin. |
-| 1 | The action returned `"ok": false` (invalid action arguments or the desktop call failed). |
-| 2 | The command line could not be parsed, `--json` was combined with a subcommand, or no subcommand was given. Parse errors still print JSON. No-subcommand prints human help. |
+| 0 | `"ok": true`. Also `--help` and `--version`. `serve` and `--json` exit 0 on a clean end of stdin. `doctor` exits 0 whenever the report was produced, even with a permission missing. |
+| 1 | `"ok": false`. |
+| 2 | The command line could not be parsed, `--json` was combined with a subcommand, or no subcommand was given. Parse errors still print JSON. |
 
-`--pretty` pretty-prints one-shot JSON, including `exec`. `serve` and `--json` always print compact JSON, one object per line, so `--pretty` does not change them.
+## Conventions
 
-With no subcommand and without `--json`, the process prints help and exits 2.
+- Logical coordinates everywhere on the CLI and in JSON. Image-pixel coordinates are accepted when `--coord image` or `coord: "image"`.
+- One JSON object per action. `--pretty` pretty-prints a one-shot. `serve` and `--json` stay one object per line.
+- A failed action exits non-zero and carries `{"ok":false,"error":{"code","message"}}`. `error.code` is the stable contract — branch on it, not on the message text.
 
 ## Global flags
 
-| Flag | Meaning |
-| --- | --- |
-| `--pretty` | Pretty-print one-shot JSON. |
-| `--json` | Read newline-delimited JSON actions from stdin. Do not combine with a subcommand. |
-| `--help`, `-h` | Human-readable help. Exit 0. |
-| `--version`, `-V` | Human-readable version. Exit 0. |
+Applies to every subcommand. The JSON equivalents are sibling keys of `action` and are stripped before `Action` is decoded.
+
+| Flag | JSON key | Default | Meaning |
+| --- | --- | --- | --- |
+| `--pretty` | n/a | off | Pretty-print one-shot JSON. Serve mode stays one object per line. |
+| `--json` | n/a | off | Read newline-delimited JSON actions from stdin. |
+| `--app <NAME\|BUNDLE\|PID>` | `app` | frontmost on macOS | Target application. |
+| `--window <TITLE\|INDEX\|ID>` | `window` | key window of `--app` | `index` is z-order, `0` is front. `id:<number>` selects by window id. |
+| `--element <N>` | `element` | none | Index from the latest `tree` for this app and window. |
+| `--require-visible` | `require_visible` | false | Fail when the element is outside the window and scroll-into-view cannot run. |
+| `--diff` | `diff` | true once a baseline exists | Print a diff against the cached tree. |
+| `--full` | `full` | off | Print the full tree and replace the cached baseline. |
+| `--session <ID>` | `session` | process id | Cache namespace. Use it to keep parallel runs apart. |
+| `--state` | `return_state` | false | Attach the post-action accessibility tree. |
+| `--screenshot` | `include_screenshot` | false | With `--state`, also attach a window image. |
+| `--coord <screen\|image>` | `coord` | `screen` on the CLI, `image` inside adapters | Coordinate space for `x`/`y`. |
+| `--adapter <native\|openai\|anthropic>` | `adapter` | `native` | Schema translator for `exec`, `serve`, and `--json`. |
+| `--policy <PATH>` | n/a | `~/.config/computer-use/policy.toml` | User policy file. |
+| `--confirm-cmd <COMMAND>` | `confirm_cmd` | env `COMPUTER_USE_CONFIRM_CMD` | Sensitive-action confirm hook. |
+| `--tier <TIER>` | `tier` | auto | Input tier. |
+| `--synthetic-focus` | sets `tier: "synthetic"` | off | Alias of `--tier synthetic`. Conflicts with `--tier`. |
+| `--allow-foreground` | `allow_foreground` | false | Skip `foreground.lock` for tier `activate`. |
+| `--require-background` | `require_background` | false | Do not fall back to `activate`. Cursor motion becomes `execution_failed`. |
+| `--no-overlay` | `no_overlay` | false | Do not send the agent point to the overlay helper. |
+| `--cdp` | `cdp` | off | Route `browser` commands through Chrome DevTools Protocol. Requires the `cdp` feature. |
+| `--cdp-url <URL>` | `cdp_url` | argv discovery | Override the discovered CDP websocket URL. |
+| `--display <ID\|VIRTUAL>` | `display` | all | Restrict capture and coordinate conversion to one monitor id from `displays`. `--display virtual` is the Linux Xvfb recipe. |
+| `--exec <CMD>...` | n/a | none | With `--display virtual`, replace this process with a command inside the prepared environment (`DISPLAY=:99`). |
+
+### Tiers
+
+`ax` and `event` stay in the background and do not move the shared cursor. That is what you want by default for an agent.
+
+- `ax` — accessibility action or value. Does not activate the app.
+- `event` — post events to the target process. Does not move the system cursor.
+- `synthetic` — private SkyLight front-process call, then post events. Requires the `skylight` feature. Experimental, fails closed.
+- `activate` — activate the target, run foreground input, then restore the previous app. Takes `foreground.lock`.
+
+Absent `--tier` is auto: accessibility for presses and values, `event` then `activate` for coordinates.
+
+## Feature flags
+
+Features are compiled in. `default = []`. A published release asset enables **`portal` on Linux only**, so the stock macOS and Windows binaries have no optional feature at all.
+
+| Feature | Effect | On a release asset? |
+| --- | --- | --- |
+| `cdp` | `chromiumoxide` and a minimal `tokio`, enabling `browser *`. | **No.** Build it yourself: `cargo install computer-use --locked --features cdp`. |
+| `skylight` | `SLPSSetFrontProcessWithOptions` / `CPSSetFrontProcess` behind `--tier synthetic`. Experimental, private API, fail closed. | No. |
+| `virtual-display` | Probes two private CoreGraphics symbols and stops. No display is ever created. Experimental. | No. |
+| `portal` | XDG Desktop Portal ScreenCast + RemoteDesktop on Wayland. | Linux only. |
+
+A binary built without `cdp` answers every `browser` command with:
+
+```json
+{"ok":false,"error":{"code":"unsupported","message":"unsupported: browser commands require the `cdp` feature (build with --features cdp)"}}
+```
+
+`cdp_unavailable` means the opposite: the feature **is** built in, but Chrome is not attachable (no debugging port, no page target, websocket died). Upstream `docs/CLI.md` folds both into `cdp_unavailable`; the binary is the contract, and the binary uses `unsupported` for the missing feature. Check both codes when you branch on browser failures.
 
 ## Commands
 
-### screenshot
+### `screenshot`
 
-Capture the screen, or a logical region, and write a PNG or JPEG. The default path is in the system temp directory (`computer-use-<pid>-<nanos>-<n>.png` or `.jpg`). Coordinates are logical points, the same space as `click` and `move`. On a Retina display the image pixel size can be `scale` times the logical size.
+```
+      --output <PATH>        File to write. Defaults to a path in the system temp directory. Alias: --path.
+      --region <X,Y,W,H>     Logical region `x,y,width,height` in the same space as click coordinates.
+      --format <FORMAT>      png (default) or jpeg (`jpg` is accepted).
+      --max-width <N>        Scale the image down so its width is at most N pixels. Default: 1440. 0 keeps the source width.
+      --canvas <WxH>         Letterbox into WxH pixels, for example 1440x900. The image is not scaled up.
+      --base64               Add a standard base64 `data` field to the JSON result.
+      --marks                Stamp numbered element rectangles on the image (tree indices or OCR `oN`).
+```
+
+`--app`/`--window` capture that window only. A capture made for a window returns `capture_source` (`sck` on macOS, `windows-capture` on Windows, `portal` on Linux, `xcap` for a desktop crop fallback) and `occluded` when the fallback was used. The result also carries `image_to_screen` and `screen_to_image`, so image pixels map back to logical points.
 
 ```bash
-computer-use screenshot
 computer-use screenshot --output /tmp/screen.png --region 0,0,800,600
+computer-use screenshot --app Notes --window 0 --marks --output /tmp/notes.png
 computer-use screenshot --format jpeg --max-width 1280 --base64
 ```
 
-| Flag | Meaning |
-| --- | --- |
-| `--output PATH` | File to write. Parent directories are created. |
-| `--region X,Y,W,H` | Logical region. Whitespace around commas is ignored. Width and height must be ≥ 1 and ≤ 100000. |
-| `--format png\|jpeg\|jpg` | Default `png`. `jpg` is an alias of `jpeg`. The JPEG file extension is `.jpg`. |
-| `--max-width N` | Scale the image down so its width is at most N pixels. |
-| `--base64` | Add a standard, unwrapped base64 `data` field. |
+### `click`
 
-```json
-{"ok":true,"path":"/tmp/computer-use-123-456.png","width":800,"height":600,"scale":2.0,"format":"png"}
+```
+      --x <X>             Logical x coordinate. Required with --y when --element is omitted.
+      --y <Y>             Logical y coordinate. Required with --x when --element is omitted.
+      --button <BUTTON>   left (default), right, middle, back (button 4), forward (button 5).
+      --double            Click twice. With --element, this presses twice.
+      --count <COUNT>     Click count, 1, 2, or 3. --count 3 is a triple click. Default: 1.
 ```
 
-`width` and `height` are image pixels. `scale` is the frame scale (physical pixels divided by logical width).
+`--element N` is an alias of `press`. Pass one of the element form or the coordinate form, not both.
 
-### click
+### `press`
 
-Move the pointer to a logical point and click.
-
-```bash
-computer-use click --x 120 --y 240
-computer-use click --x 120 --y 240 --button right --double
+```
+      --count <COUNT>     How many times to press. Default: 1.
+      --button <BUTTON>   left (default), right, middle, back (button 4), forward (button 5).
 ```
 
-| Flag | Meaning |
-| --- | --- |
-| `--x` | Logical x. Required. |
-| `--y` | Logical y. Required. |
-| `--button left\|right\|middle` | Default `left`. |
-| `--double` | Click twice. |
+`--button right` runs `AXShowMenu` when the element advertises it; otherwise the click is aimed at the element center.
 
-```json
-{"ok":true,"action":"click","x":120,"y":240,"button":"left","double":false}
+### `set-value`
+
+```
+      --value <VALUE>     New value.
 ```
 
-A double click reports `"action": "double_click"` and `"double": true`.
+Sets the value through the accessibility value interface, not by typing keystrokes. Secure fields are refused with `policy_denied` and the value is never read.
 
-### move
+### `select-text`
 
-Move the pointer without clicking.
-
-```bash
-computer-use move --x 400 --y 300
+```
+      --start <START>     First selected character.
+      --end <END>         Character after the selection.
 ```
 
-```json
-{"ok":true,"action":"move","x":400,"y":300}
+Secure fields are refused. `start` must be ≤ `end`, and `end` must sit inside the character count when the platform reports it.
+
+### `perform-action`
+
+```
+      --name <NAME>       Allowlisted accessibility action name.
 ```
 
-### type
+- macOS: `AXPress`, `AXShowMenu`, `AXIncrement`, `AXDecrement`, `AXConfirm`, `AXCancel`, `AXRaise`, `AXScrollToVisible`, `AXScrollToVisibleTopLeft`, `AXScrollToVisibleBottomRight`, `AXScrollToVisibleLeft`, `AXScrollToVisibleRight`, `AXScrollPageUp`, `AXScrollPageDown`, `AXScrollPageLeft`, `AXScrollPageRight`.
+- Windows: `press` (UIA `Invoke`), `expand`, `collapse` (UIA `ExpandCollapse`).
+- Linux: any action from `Action::get_actions()` on the matched element; the first action is the default.
 
-Type Unicode text into the focused control. Empty text is rejected. A null byte is rejected.
+### `scroll-to`, `focus`, `move`, `drag`, `mouse-down`, `mouse-up`
 
-```bash
-computer-use type --text "hello"
+```
+scroll-to  Scroll an element into view.  Alias: scroll-to-visible
+focus      Focus an element
+move       Move the pointer without clicking.  Requires --x and --y
+drag       --path <X,Y,X,Y>  at least two points, or a JSON array of {x, y}
+           --button <left|right|middle>
+mouse-down --x --y  Press and hold until mouse-up. Default: --button left
+mouse-up   --x --y  Release a button pressed by mouse-down
 ```
 
-```json
-{"ok":true,"action":"type","text":"hello","chars":5}
+`mouse-down` stays down for the rest of a `serve` loop or a `batch`, and is released when that process drops the input session. A later process is not held down.
+
+### `type`, `key`, `hold-key`
+
+```
+type      --text <TEXT>        Text to type. A null byte or empty text is refused.
+key       --keys <COMBO>       Combination such as `super+c` or `ctrl+alt+Delete`.
+hold-key  --keys <COMBO>       One combo. Space-separated sequences are refused.
+          --ms <N>             Milliseconds to hold (at most 30000).
 ```
 
-`chars` is the Unicode scalar count, not the byte length.
+Modifier tokens: `cmd`/`command`, `meta`/`super`, `ctrl`/`control`, `alt`/`option`, `shift`.
+Named keys: `enter`/`return`, `tab`, `esc`/`escape`, `space`, `left`/`right`/`up`/`down` (and `arrow` aliases), `f1`–`f24`, `backspace`, `delete`, `home`, `end`, `pageup`/`pagedown` (and `page_up`/`page_down`), `insert`, `caps_lock`, `num_lock`, `scroll_lock`, `print_screen`, `menu`, plus xdotool keysyms on Linux.
 
-### key
+A key aimed at a secure field returns `policy_denied`. A key without `--element` cannot see a secure focused field, which is why the element form is the safe one.
 
-Press a key combination. The last `+` segment is the key. Earlier segments are modifiers. Segments are trimmed. An empty segment is an error.
+### `clipboard`
 
-```bash
-computer-use key --keys "cmd+shift+4"
-computer-use key --keys "ctrl+c"
-computer-use key --keys "alt+tab"
-computer-use key --keys "enter"
+```
+clipboard get   Read text, or write a clipboard image to the session cache.
+clipboard set   Replace the clipboard. Requires a confirm hook.
+                --text <TEXT>   Text to write. Empty text is refused.
+                --image <PNG>   PNG file to write. Used when --text is omitted.
 ```
 
-| Token | Meaning |
-| --- | --- |
-| `cmd`, `command` | Command. Sent as the platform meta key. Reported modifier `command`. |
-| `meta`, `super` | Meta / Super. Reported modifier `meta`. |
-| `ctrl`, `control` | Control. Reported modifier `control`. |
-| `alt`, `option` | Alt / Option. Reported modifier `alt`. |
-| `shift` | Shift. |
+`get` returns `{ok: true, kind: "text", text: "..."}`, `{ok: true, kind: "image", path: "...", width, height}`, or `{ok: true, kind: "empty"}`. Text wins over an image.
 
-Named keys: `enter` / `return`, `tab`, `esc` / `escape`, `space`, `left` / `right` / `up` / `down` (and `arrow` aliases such as `arrow_left`), `f1`–`f12`, `backspace` / `bksp`, `delete` / `del`, `home`, `end`, `pageup` / `pagedown` (and `page_up` / `page_down`). A single character is that character, case preserved (`shift+A` keeps `A`).
+### `zoom`
 
-```json
-{"ok":true,"action":"key","keys":"cmd+c","modifiers":["command"],"key":"c"}
+```
+      --region <X,Y,W,H>   Required. Logical region `x,y,width,height`.
+      --output <PATH>      File to write. Alias: --path.
+      --format <FORMAT>    png (default) or jpeg.
+      --max-width <N>      Scale down to at most N pixels. Default: 1440.
+      --canvas <WxH>       Letterbox into WxH pixels.
+      --base64             Add a standard base64 `data` field.
 ```
 
-### scroll
+Window-local coordinates when `--app`/`--window` is set; the far edge may equal the window size.
 
-Scroll the mouse wheel. Positive `dy` is down. Positive `dx` is right.
+### `scroll`
 
-Use `--dx` and `--dy`, or `--direction` with `--amount`. Do not mix the two forms. `--amount` without `--direction` is an error. The default amount is 1. Pass `--x` and `--y` together to move the pointer first. One of them alone is an error.
-
-```bash
-computer-use scroll --dy 3
-computer-use scroll --dx -2 --dy 1
-computer-use scroll --direction down --amount 3
-computer-use scroll --x 400 --y 300 --direction up --amount 2
+```
+      --x <X>             Move the pointer to this logical x before scrolling.
+      --y <Y>             Move the pointer to this logical y before scrolling.
+      --dx <DX>           Horizontal wheel steps. Positive is right.
+      --dy <DY>           Vertical wheel steps. Positive is down.
+      --direction <DIR>   up | down | left | right (paired with --amount).
+      --amount <N>        Wheel steps. Default: 1.
 ```
 
-| Flag | Meaning |
-| --- | --- |
-| `--x`, `--y` | Logical point to move to first. Both or neither. |
-| `--dx` | Horizontal steps. Positive is right. |
-| `--dy` | Vertical steps. Positive is down. |
-| `--direction up\|down\|left\|right` | Direction used with `--amount`. |
-| `--amount` | Steps for `--direction`. Default 1. |
+Do not mix `--dx`/`--dy` with `--direction`/`--amount`.
 
-`up` becomes negative `dy`. `left` becomes negative `dx`. The result reports the resolved steps:
+### `get-state`, `wait`, `displays`, `isolation`
 
-```json
-{"ok":true,"action":"scroll","x":400,"y":300,"dx":0,"dy":3}
-```
-
-Omitted `--x` and `--y` are JSON `null`.
-
-### get-state
-
-Report screen size and displays, cursor position, the frontmost app and window, and a best-effort accessibility tree. The command does not panic when a subsystem is unavailable. Missing data is `null`, and `note` explains why. `get_state` is a CLI alias.
+`get-state` reports `{platform, displays, screen, cursor, frontmost_app, frontmost_window, accessibility, note}`. Missing fields are `null` and `note` explains why. `wait` takes `--ms` and `--seconds`, adds them when both are set, and requires at least one. `displays` lists connected monitors with `display_id` for `--display`. `isolation` returns `{platform, display_filter, cdp, virtual_display, set_of_marks, notes}` plus the `infeasible` object.
 
 ```bash
 computer-use get-state
-computer-use get_state
-```
-
-```json
-{
-  "ok": true,
-  "platform": "macos",
-  "displays": [
-    {"id": 1, "name": "Built-in", "x": 0, "y": 0, "width": 1512, "height": 982, "scale": 2.0, "is_primary": true}
-  ],
-  "screen": {"id": 1, "name": "Built-in", "x": 0, "y": 0, "width": 1512, "height": 982, "scale": 2.0},
-  "cursor": {"x": 400, "y": 300},
-  "frontmost_app": "Finder",
-  "frontmost_window": "Desktop",
-  "accessibility": null,
-  "note": "execution failed: accessibility needs Accessibility permission. Enable this terminal or computer-use in System Settings > Privacy & Security > Accessibility, then retry"
-}
-```
-
-`platform` is `macos`, `linux`, or `windows`. `screen` is the primary display, or the first display. Display `width`, `height`, `x`, and `y` are logical. `scale` is device pixels per logical pixel, or `1.0` when the platform does not report one.
-
-On macOS the tree comes from System Events. A window element can include `role`, `description`, `title`, `value`, `position`, `size`, and `children` (depth capped, children capped). On Linux and Windows in this build, `accessibility` is `null` and `note` says the tree is not available. Linux frontmost-window lookup uses `xdotool` when it is on `PATH`.
-
-`note` is `null` when nothing was missing. Several failures are joined with `"; "`. A permission failure mentions Accessibility and **System Settings > Privacy & Security > Accessibility**. `"ok"` stays true for those gaps. A totally failed action is a different path and returns `"ok": false`.
-
-### wait
-
-Sleep, then return `waited_ms`. `--ms` and `--seconds` are added when both are set. At least one is required. Fractions are allowed for `--seconds`. Values must be finite and ≥ 0. The total must be at most 24 hours.
-
-```bash
 computer-use wait --ms 250
-computer-use wait --seconds 0.5
-computer-use wait --ms 100 --seconds 1
-```
-
-```json
-{"ok":true,"waited_ms":250}
-```
-
-The library message when both are omitted is `invalid arguments: wait requires ms, seconds, or both`. The process exits 1.
-
-### displays
-
-List connected displays without capturing pixels.
-
-```bash
 computer-use displays
+computer-use isolation
 ```
 
-```json
-{"ok":true,"displays":[{"id":1,"name":"Built-in","x":0,"y":0,"width":1512,"height":982,"scale":2.0,"is_primary":true}]}
+### `list-apps`
+
+```
+      --all    Include accessory and prohibited apps.
 ```
 
-## JSON mode
+Returns running applications with `name`, `bundle_id`, `pid`, `path`, `active`, and `hidden`. Use it to learn the exact name or bundle id you then pass to `--app`.
 
-`serve` and `--json` read newline-delimited JSON from stdin and write one JSON response per line. This is a stdin protocol, not a TCP server. Empty lines are skipped. The process exits 0 on a clean end of input. It exits non-zero only when stdin or stdout fails. An individual action can still be `{"ok": false, ...}`.
+### `list-windows`
 
-`exec` runs one JSON action from an argument and honors `--pretty`. Its exit code follows that action (`0` or `1`).
+Returns on-screen windows in z-order. Index `0` is front. `--app` filters to that application and renumbers so `0` is that app's front window. Each row carries `id`, `title`, `app`, `pid`, `bounds`, `layer`, `z`, `on_screen`, and `ax_matched`.
+
+### `launch`, `activate`, `quit`
+
+```
+launch [APP]      Launch by name, bundle id, path, or pid. macOS uses NSWorkspace.
+activate          Bring an application forward. Requires --app. --window is checked first.
+quit              --force   Force-quit after the confirm hook allows it.
+```
+
+A built-in deny list covers Terminals and Password Managers and runs before the backend on every OS. Off macOS these return `unsupported`.
+
+### `policy`
+
+```
+policy check   Report allow or deny for `--app`.
+```
+
+Returns `{ok: true, decision: "allow" | "deny", source: "builtin" | "admin" | "user" | "default", code: "ok" | "policy_denied", ...}` without performing an action. A `deny` decision keeps `code: "ok"` and `ok: true`, so branch on `decision`, not on `ok`.
+
+### `pause`, `resume`
+
+`pause` installs a cross-process kill switch on macOS (`CGEventTap`). Mutating actions return `paused` afterwards. `resume` clears it.
+
+### `doctor`
+
+```
+      --prompt             Prompt for Accessibility, Screen Recording, Post Event, and Input Monitoring. Alias: --request.
+      --open-settings      Open System Settings to the first missing permission pane (macOS only).
+```
+
+Returns `{ok, permissions_ok, missing, fix, identity, accessibility, screen_capture, post_events, input_monitoring, input_monitor, atspi_bus, session, portal, uiaccess, integrity, bundle_id, responsible_app, note, text}`. `permissions_ok` and `missing` are the grant aggregate. Envelope `ok: true` means the report was produced, so the process exits 0 even when a permission is missing — branch on `permissions_ok`.
+
+### `tree`
+
+Prints the numbered accessibility tree for the key window, one line per node:
+
+```
+[n] ROLE "title" @x,y wxh value=... actions=...
+```
+
+`--diff` (default once a baseline exists) prints only what changed. `--full` prints everything and replaces the baseline. Truncation caps: 40 children (`… +N`), depth 12, 400 lines, then `truncated=true`. `http`/`https` values keep scheme, host, and at most 60 characters of path; the query is stripped.
 
 ```bash
-printf '%s\n' '{"id":1,"action":"wait","ms":10}' | computer-use serve
-printf '%s\n' '{"id":1,"action":"click","x":10,"y":20}' | computer-use --json
-computer-use exec '{"action":"wait","ms":10}'
-computer-use --pretty exec '{"id":"a","action":"displays"}'
+computer-use tree --app Notes --window 0
+computer-use tree --app Notes --window 0 --diff
+computer-use tree --app Notes --window 0 --full
 ```
 
-Combining `--json` with a subcommand exits 2:
+### `ocr`
+
+```
+      --force    Re-run OCR even when the latest screenshot map is recent.
+```
+
+Runs OCR on the most recent capture for `--app` or `--window`. macOS uses `VNRecognizeTextRequest`, Windows uses `Windows.Media.Ocr.OcrEngine`. **Linux returns `unsupported`** ("no OCR backend on Linux in 0.2.0"). The recognized text is never logged; it lives in the JSON response body only.
+
+The `ocr --help` text on the binary still says "macOS only" and names Linux and Windows — that string is stale, since P12b replaced the Windows stub with a real Media OCR call. This file and the source agree with the code.
+
+### `menu`, `apple-event`, `shortcuts`, `dock`, `spaces`
+
+macOS only except `spaces`, which groups on-screen windows by the screen containing each window's center and does not attempt Mission Control moves.
+
+```
+menu list   --app <APP>   --depth <N>   Default 4, max 8.
+menu click  --app <APP>   --path "File > Save As > Save"
+apple-event --app <APP>   --script <SCRIPT>   --language applescript|javascript
+shortcuts run <NAME>
+dock list
+dock click  --title <T>   Case-insensitive
+spaces
+```
+
+`apple-event` runs `osascript -e`. The script body is never logged verbatim; the audit line records `script_bytes` and a stable FNV-1a 64-bit hash. `shortcuts run` invokes `["shortcuts", "run", name]` with a 60 s timeout.
+
+### `session`
+
+```
+session end     Restore Electron accessibility flags this process changed and stop observers.
+session prune   --dry-run   --ttl <TTL>   Default 86400 seconds (24 hours).
+```
+
+### `serve`, `exec`, `overlay`
+
+`serve` reads newline-delimited JSON from stdin and writes one JSON response per line. Stdin protocol, not a TCP server. Exits 0 on a clean end of input. `exec` runs one JSON action from an argument and honors `--pretty`. `overlay serve` draws a click-through ring at the agent point; the main CLI sends `{x, y, session}` on `<cache>/overlay.sock` after a successful positional action, a missing helper adds the note `overlay helper not running` and the action still succeeds, and `--no-overlay` skips the socket.
+
+### `browser` (requires the `cdp` feature)
+
+```
+browser activate    --target <TARGET>            Restrict to one tab by targetId.
+browser navigate    --url <URL> --target <TARGET>
+browser click       --selector <SELECTOR> --target <TARGET>
+browser text        --selector <SELECTOR> --target <TARGET>
+browser type        --text <TEXT> --selector <SELECTOR> --target <TARGET>
+browser eval        --eval <SCRIPT> --target <TARGET>
+browser tabs
+```
+
+Attach only. The CLI flag is `--cdp`, the JSON field is `cdp: true`. `computer-use` never spawns, restarts, or quits Chrome — you start Chrome with `--remote-debugging-port=N` yourself. The port is discovered by scanning the `--app` pid's argv (macOS `sysctl KERN_PROCARGS2`, Linux `/proc/<pid>/cmdline`); Windows cannot read another process's argv, so pass `--cdp-url ws://host:port` there. With no `--app` it defaults to `ws://127.0.0.1:9222`. No page target is `cdp_unavailable`, never a new page.
+
+`browser click` uses CDP `Input.dispatchMouseEvent`, which is a page coordinate system with no screen-space transform.
+
+## JSON actions
+
+`action` is the tag, `snake_case`. Aliases are accepted where the field or command accepts them (`move_mouse`, `set-value`, `scroll-to`, `browser-tabs`).
+
+| Action | Fields | 0.2.0? |
+| --- | --- | --- |
+| `screenshot` | `output`/`path`, `region`, `format`, `max_width`, `canvas`, `base64`, `marks` | fields beyond the 0.1.0 set are |
+| `click` | `x`, `y`, `button`, `double`, `count` | `count` is |
+| `double_click` | `x`, `y`, `button` | 0.1.0 |
+| `triple_click` | `x`, `y`, `button` | yes |
+| `move` | `x`, `y`. Alias: `move_mouse`. | 0.1.0 |
+| `press` | `count`, `button` | yes |
+| `type` | `text` | 0.1.0 |
+| `key` | `keys` | 0.1.0 |
+| `scroll` | `x`, `y`, `dx`/`scroll_x`, `dy`/`scroll_y`, `direction`, `amount` | 0.1.0 |
+| `drag` | `path`, `button` | yes |
+| `mouse_down` / `mouse_up` | `x`, `y`, `button` | yes |
+| `hold_key` | `keys`, `ms` (≤ 30000) | yes |
+| `zoom` | `region` (required), `output`/`path`, `format`, `max_width`, `canvas`, `base64` | yes |
+| `clipboard_get` | none | yes |
+| `clipboard_set` | `text`, `image` (PNG path) | yes |
+| `focus` | none | yes |
+| `set_value` | `value` | yes |
+| `select_text` | `start`, `end` | yes |
+| `perform_action` | `name` | yes |
+| `scroll_to` | none. Aliases: `scroll-to`, `scroll_to_visible`, `scroll-to-visible`. | yes |
+| `get_state` | none. Alias: `get-state`. | 0.1.0 |
+| `cursor_position` | none | yes |
+| `wait` | `ms`, `seconds` | 0.1.0 |
+| `displays` | none | 0.1.0 |
+| `isolation` | none | yes |
+| `list_apps` | `all`. Alias: `list-apps`. | yes |
+| `list_windows` | none. Alias: `list-windows`. | yes |
+| `launch` | none (uses `--app`) | yes |
+| `activate` | none (uses `--app`/`--window`) | yes |
+| `quit` | `force` | yes |
+| `policy_check` | none (uses `--app`) | yes |
+| `pause` / `resume` | none | yes |
+| `doctor` | `prompt` (alias `request`), `open_settings`, `x11` | yes |
+| `tree` | none | yes |
+| `ocr` | `force` | yes |
+| `session_end` | none | yes |
+| `session_prune` | `dry_run`, `ttl_secs` | yes |
+| `menu_list` | `app` (override), `depth` | yes |
+| `menu_click` | `app` (override), `path` | yes |
+| `apple_event` | `app` (override), `script`, `language` | yes |
+| `shortcuts_run` | `name` | yes |
+| `dock_list` | none | yes |
+| `dock_click` | `title` | yes |
+| `spaces` | none | yes |
+| `batch` | `actions` (array of native actions), `stop_on_error` | yes |
+| `browser_tabs` | none | yes |
+| `browser_activate` | `target_id` | yes |
+| `browser_navigate` | `url`, `target_id` | yes |
+| `browser_click` | `selector`, `target_id` | yes |
+| `browser_text` | `selector`, `target_id` | yes |
+| `browser_type` | `text`, `selector` (optional), `target_id` | yes |
+| `browser_eval` | `script`, `target_id` | yes |
+
+### Batch
+
+`action: "batch"` runs one resolved target through one cache revision sequence. `stop_on_error` defaults true and sets `stopped_at`. Each step re-validates. `return_state` runs once at the end, and a step's own `return_state` is ignored. A nested batch is `invalid_arguments`.
 
 ```json
-{"ok":false,"error":{"code":"invalid_arguments","message":"--json reads actions from stdin. Drop the subcommand, or use serve or exec"}}
+{"action":"batch","app":"Notes","stop_on_error":true,"actions":[{"action":"click","element":12},{"action":"set_value","element":4,"value":"hello"}]}
 ```
 
-Requests are objects with an `action` tag and an optional `id`. The `id` is echoed on the response and may be any JSON value. Unknown fields that belong to the action are rejected. `id` is removed before the action is decoded.
+### Adapters
 
-| `action` | Fields |
-| --- | --- |
-| `screenshot` | `output`, `region` (`"x,y,w,h"` or `{x,y,width,height}`), `format` (`png` or `jpeg`), `max_width`, `base64` |
-| `click` | `x`, `y`, `button` (`left`, `right`, `middle`), `double` |
-| `double_click` | `x`, `y`, `button`. Same as `click` with `double: true`. Not a CLI subcommand. |
-| `move` | `x`, `y`. Alias: `move_mouse`. |
-| `type` | `text` |
-| `key` | `keys` |
-| `scroll` | `x`, `y`, `dx` (alias `scroll_x`), `dy` (alias `scroll_y`), `direction`, `amount` |
-| `get_state` | none. Alias: `get-state`. |
-| `wait` | `ms`, `seconds` |
-| `displays` | none |
+`native` passes through. `openai` translates the OpenAI `computer` tool shape (click, double_click, scroll, type, keypress, move, wait, screenshot, back, forward, drag, hold_key, zoom, cursor_position) and sets `coord=image`. `anthropic` translates Anthropic `computer_20251124` (left/right/middle click, double_click, mouse_move, scroll, type, key, wait, zoom, cursor_position, triple_click, left_click_drag, mouse_down, mouse_up, hold_key) and sets `coord=image`.
 
-```json
-{"id":1,"action":"click","x":10,"y":20,"button":"left"}
-{"id":2,"action":"key","keys":"cmd+shift+4"}
-{"id":3,"action":"scroll","direction":"down","amount":3}
-{"id":4,"action":"screenshot","region":"0,0,800,600","format":"png"}
-{"action":"get_state"}
-```
+Image coordinates need a stored screenshot map. There is no auto-detection.
 
-A response with an id:
+### `--state`
 
-```json
-{"ok":true,"id":1,"action":"click","x":10,"y":20,"button":"left","double":false}
-```
-
-Invalid JSON:
-
-```json
-{"ok":false,"error":{"code":"invalid_arguments","message":"invalid JSON: ..."}}
-```
+`--state` (JSON `return_state`) attaches the post-action `state.tree` as numbered full text, `state.diff`, and the new revision. That diff becomes the `tree --diff` baseline. Read-only actions ignore it. A tree or screenshot failure keeps the action result and adds `warnings`.
 
 ## Error codes
 
-`error` is `{"code", "message"}`.
+`ComputerError::code()` is the stable contract, and the same string is written into `error.code` of every failed response.
 
-| `code` | When |
-| --- | --- |
-| `invalid_arguments` | Bad flags, bad JSON, empty text, mixed scroll forms, wait out of range, bad region. Library messages are prefixed with `invalid arguments: `. Clap's own message is passed through without that prefix. |
-| `execution_failed` | The OS or a backend call failed, including a denied input or capture. A backend panic is caught and reported with this code. |
-| `io_error` | Filesystem or process I/O failed. |
-| `unsupported` | The platform does not implement the operation. Linux and Windows accessibility lookups use this, and `get-state` turns it into `accessibility: null` plus `note` rather than `"ok": false`. |
+| Code | When | 0.2.0? |
+| --- | --- | --- |
+| `invalid_arguments` | Bad CLI flags, malformed JSON, or a missing required field. | 0.1.0 |
+| `execution_failed` | Framework error that is not in this table. | 0.1.0 |
+| `io_error` | stdin/stdout/filesystem failure. | 0.1.0 |
+| `unsupported` | Off-platform or feature-off. | 0.1.0 |
+| `app_not_found` | Name, bundle id, or pid matched nothing running, and launch was not requested. | yes |
+| `window_not_found` | App resolved, window did not. | yes |
+| `element_not_found` | Index missing in the cached or fresh tree, or no session cache. | yes |
+| `stale_element` | The cached path's role, identifier, or frame (beyond 2 points) changed, or the cached pid, window, or revision header does not match. Action not performed. Body includes the new tree. | yes |
+| `permission_required` | Accessibility or Screen Recording is off, or a portal dialog was cancelled. | yes |
+| `policy_denied` | Built-in or configured deny, including secure fields. | yes |
+| `confirm_required` | Sensitive action and no confirm hook is configured. | yes |
+| `confirm_denied` | Hook exited non-zero or timed out. | yes |
+| `blocked_url` | Browser URL matched the block list. | yes |
+| `paused` | Local user input tripped the kill switch. | yes |
+| `cdp_unavailable` | The `cdp` feature is built in but Chrome has no debugging port or no page target. A binary without the feature returns `unsupported` instead. | yes |
+| `display_unavailable` | The screen is locked, the display is asleep, or no display or shareable window is available. Checked before `window_not_found`. | yes |
 
 ## Coordinates
 
 Click, move, scroll, and screenshot regions use logical points. A display's `width`, `height`, `x`, and `y` are logical. `scale` is physical pixels divided by logical width. A screenshot's `width` and `height` are image pixels.
 
+Prefer the `image_to_screen` and `screen_to_image` maps in a screenshot result over dividing by `scale` yourself. `scale` alone is wrong on a mixed-DPI desktop. Coordinates are a fallback; act by element index.
+
+`--display <id>` narrows what may be addressed without rebasing: points stay virtual-desktop points, and a point outside the monitor is `invalid_arguments`. Right and bottom edges are exclusive.
+
 Scroll signs follow the platform wheel: positive `dy` is down, positive `dx` is right.
 
-## Permissions
+## File locations
 
-Input and capture need OS permission. Details and the threat model are in [security.md](security.md).
+| Item | macOS / Linux | Windows |
+| --- | --- | --- |
+| Session cache | `${XDG_CACHE_HOME:-~/.cache}/computer-use/sessions/<session>/` | `%LOCALAPPDATA%\computer-use\cache\sessions\<session>\` |
+| User policy | `~/.config/computer-use/policy.toml` | `~/.config/computer-use/policy.toml` |
+| Admin policy | `/etc/computer-use/policy.toml` | `%ProgramData%\computer-use\policy.toml` |
+| Audit log | `${XDG_STATE_HOME:-~/.local/state}/computer-use/audit.jsonl` | `%LOCALAPPDATA%\computer-use\audit.jsonl` |
+| Foreground lock | `<cache>/foreground.lock` | `<cache>\foreground.lock` |
+| Overlay socket | `<cache>/overlay.sock` | `<cache>\overlay.sock` |
 
-- **macOS.** Screen Recording for `screenshot`. Accessibility for mouse, keyboard, and the tree. **System Settings > Privacy & Security**.
-- **Windows.** An interactive desktop session. The accessibility tree is null in this build.
-- **Linux.** X11 only. Wayland is not a supported target. `xdotool` helps the frontmost-window lookup. The accessibility tree is null in this build.
+Cache files are JSON, mode `0600` on Unix. They hold the last revision, the rendered tree, the structural nodes, and the last screenshot map. They do not hold secure-field values.
+
+## CLI/library parity
+
+Every JSON action has a CLI command, and every CLI command has a matching `Action` variant or runs through `dispatch` (`serve`, `exec`, `overlay`, the `browser` feature gate, `policy_check`, `pause`, `resume`). Upstream ships a test, `tests/cli_doc_matches_help.rs`, that parses its own `docs/CLI.md` and asserts each action name and subcommand is reachable on a fresh build.
+
+This file is a copy for the agent. It is regenerated in this repository, not upstream.
