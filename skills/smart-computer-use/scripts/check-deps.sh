@@ -3,7 +3,7 @@
 set -euo pipefail
 
 JSON=0
-INSTALL_DIR="${HOME}/.local/bin"
+INSTALL_DIR="${COMPUTER_USE_INSTALL_DIR:-${HOME}/.local/bin}"
 BINARY_NAME="computer-use"
 TMP_ROOT=""
 PREFERRED_VERSION="0.2.0"
