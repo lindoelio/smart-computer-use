@@ -3,7 +3,7 @@
 # Idempotent and quiet. See --help.
 set -euo pipefail
 
-PREFERRED_VERSION="0.3.0"
+PREFERRED_VERSION="0.3.1"
 REPO="lindoelio/computer-use"
 REPO_URL="https://github.com/${REPO}"
 API_URL="https://api.github.com/repos/${REPO}"
@@ -32,20 +32,20 @@ Install the computer-use CLI into ~/.local/bin.
   --help        Show this help.
 
 Environment:
-  COMPUTER_USE_VERSION      Release tag to pin, for example v0.3.0 or 0.3.0.
-                            Default: v0.3.0 when that release exists, otherwise
+  COMPUTER_USE_VERSION      Release tag to pin, for example v0.3.1 or 0.3.1.
+                            Default: v0.3.1 when that release exists, otherwise
                             the latest GitHub release.
   COMPUTER_USE_INSTALL_DIR  Install directory. Default: ~/.local/bin.
 
 Release selection:
-  v0.3.0 is preferred. The script probes the GitHub releases API (no auth
-  required) and installs v0.3.0 when it is published. When it is not, the
+  v0.3.1 is preferred. The script probes the GitHub releases API (no auth
+  required) and installs v0.3.1 when it is published. When it is not, the
   script falls back to the latest published release instead of failing.
 
 If computer-use is already in the install directory or on PATH at an
-acceptable version, the download is skipped. Acceptable means >= 0.3.0, or
+acceptable version, the download is skipped. Acceptable means >= 0.3.1, or
 exactly COMPUTER_USE_VERSION when that variable is set. A binary older than
-v0.3.0 is replaced, because the tree, element targeting, batch, browser, and
+v0.3.1 is replaced, because the tree, element targeting, batch, browser, and
 --state-diff surface needs it.
 
 Supported release assets:

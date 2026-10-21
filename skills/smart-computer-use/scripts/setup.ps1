@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$PreferredVersion = @(0, 3, 0)
+$PreferredVersion = @(0, 3, 1)
 $Repo = 'lindoelio/computer-use'
 $RepoUrl = "https://github.com/$Repo"
 $ApiUrl = "https://api.github.com/repos/$Repo"
@@ -35,13 +35,13 @@ Install the computer-use CLI into `$HOME\.local\bin.
   -Help       Show this help.
 
 Environment:
-  COMPUTER_USE_VERSION      Release tag to pin, for example v0.3.0 or 0.3.0.
-                            Default: v0.3.0 when that release exists, otherwise
+  COMPUTER_USE_VERSION      Release tag to pin, for example v0.3.1 or 0.3.1.
+                            Default: v0.3.1 when that release exists, otherwise
                             the latest GitHub release.
   COMPUTER_USE_INSTALL_DIR  Install directory. Default: ~\.local\bin.
 
 Release selection:
-  v0.3.0 is preferred. The script probes the GitHub releases API (no auth
+  v0.3.1 is preferred. The script probes the GitHub releases API (no auth
   required) and installs v0.3.0 when it is published. When it is not, it falls
   back to the latest published release instead of failing.
 
