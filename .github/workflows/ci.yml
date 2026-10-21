@@ -87,7 +87,7 @@ jobs:
           if len(description) < 40:
               problems.append("description is missing or too short")
           compatibility = scalar("compatibility")
-          for needle in ("computer-use", "scripts/setup.sh", "Laya"):
+          for needle in ("computer-use", "scripts/setup.sh"):
               if needle not in compatibility:
                   problems.append(f"compatibility does not mention {needle}")
           version = scalar("version")
@@ -97,7 +97,7 @@ jobs:
                   if stripped.startswith("version:"):
                       version = stripped.split(":", 1)[1].strip().strip('"').strip("'")
                       break
-          if version != "0.2.0":
+          if version != "0.3.0":
               problems.append(f"metadata.version is {version!r}")
           if "metadata" not in front:
               problems.append("metadata block is missing")
@@ -128,3 +128,54 @@ jobs:
 
       - name: Validate skills.sh.json
         run: python3 -c "import json;json.load(open('skills.sh.json'))"
+
+  cli-surface:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the pinned release and check it against the golden
+        run: |
+          set -euo pipefail
+          version=$(python3 -c "import json;print(json.load(open('skills/smart-computer-use/references/cli-surface.json'))['cli_version'])")
+          base="https://github.com/lindoelio/computer-use/releases/download/v${version}"
+          asset="computer-use-linux-x64.tar.gz"
+          mkdir -p /tmp/cli
+          if ! curl -fsSL --retry 3 -o "/tmp/cli/${asset}" "${base}/${asset}"; then
+            echo "release v${version} is not published yet; the surface comparison is skipped"
+            echo "publish the crate release, then this job compares the real binary"
+            exit 0
+          fi
+          curl -fsSL --retry 3 -o "/tmp/cli/${asset}.sha256" "${base}/${asset}.sha256"
+          (cd /tmp/cli && sha256sum -c "${asset}.sha256")
+          tar -xzf "/tmp/cli/${asset}" -C /tmp/cli
+          chmod +x /tmp/cli/computer-use
+          python3 skills/smart-computer-use/scripts/lint-skill.py \
+            --root . \
+            --binary /tmp/cli/computer-use \
+            --check surface
+
+  skill-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The skill must match the pinned CLI
+        run: |
+          python3 skills/smart-computer-use/scripts/lint-skill.py --root .
+
+  drift-alarm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The drift alarm must fire
+        run: bash skills/smart-computer-use/scripts/test-lint.sh
+
+  setup-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The setup script must make the right decisions
+        run: bash skills/smart-computer-use/scripts/test-setup.sh

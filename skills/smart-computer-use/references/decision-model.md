@@ -6,6 +6,8 @@ This protocol matches Laya's public question types: a request has one `state` an
 
 Laya is optional and experimental. Shipped checkpoints are over-confident before task-specific calibration. The thresholds below are this skill's policy, not a claim that a score of 0.8 is a calibrated probability.
 
+**There is no benchmark.** No latency or accuracy measurement of Laya against the main model exists, and this file is a convention, not a measured threshold. The default path is the main model reading the tree. Use Laya only when the user has explicitly asked for it.
+
 ## When to call Laya
 
 Call Laya only when `SMART_COMPUTER_USE_LAYA` is `1` or `true`, or `laya.enabled` is true in `~/.config/smart-computer-use/config.json`. If the interpreter, Ollama model, or weights path is missing, skip Laya and use the main model.

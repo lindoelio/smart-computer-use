@@ -3,49 +3,61 @@
 # Idempotent and quiet. See --help.
 set -euo pipefail
 
-MIN_VERSION="0.1.0"
-PREFERRED_VERSION="0.2.0"
+PREFERRED_VERSION="0.3.0"
 REPO="lindoelio/computer-use"
 REPO_URL="https://github.com/${REPO}"
 API_URL="https://api.github.com/repos/${REPO}"
 INSTALL_DIR="${COMPUTER_USE_INSTALL_DIR:-${HOME}/.local/bin}"
 BINARY_NAME="computer-use"
+APP_NAME="Computer Use.app"
+APP_DIR="${HOME}/Applications"
 
 VERBOSE=0
 WITH_LAYA=0
+FORCE=0
 ASSET_NAME=""
+APP_ASSET_NAME=""
 TMP_ROOT=""
 RESOLVED_TAG=""
 
 usage() {
   cat <<'EOF'
-Usage: setup.sh [--with-laya] [--verbose] [--help]
+Usage: setup.sh [--with-laya] [--force] [--verbose] [--help]
 
 Install the computer-use CLI into ~/.local/bin.
 
   --with-laya   Also run install-laya.sh (optional and experimental).
+  --force       Reinstall even when an acceptable version is already present.
   --verbose     Print progress to stderr.
   --help        Show this help.
 
 Environment:
-  COMPUTER_USE_VERSION      Release tag to pin, for example v0.2.0 or 0.2.0.
-                            Default: v0.2.0 when that release exists, otherwise
+  COMPUTER_USE_VERSION      Release tag to pin, for example v0.3.0 or 0.3.0.
+                            Default: v0.3.0 when that release exists, otherwise
                             the latest GitHub release.
   COMPUTER_USE_INSTALL_DIR  Install directory. Default: ~/.local/bin.
 
 Release selection:
-  v0.2.0 is preferred. The script probes the GitHub releases API (no auth
-  required) and installs v0.2.0 when it is published. When it is not, the
+  v0.3.0 is preferred. The script probes the GitHub releases API (no auth
+  required) and installs v0.3.0 when it is published. When it is not, the
   script falls back to the latest published release instead of failing.
 
-If computer-use is already on PATH or in ~/.local/bin at an acceptable
-version, the download is skipped. Acceptable means >= 0.1.0, or exactly
-COMPUTER_USE_VERSION when that variable is set. A binary older than v0.2.0
-still installs, with a warning that the newer commands need v0.2.0.
+If computer-use is already in the install directory or on PATH at an
+acceptable version, the download is skipped. Acceptable means >= 0.3.0, or
+exactly COMPUTER_USE_VERSION when that variable is set. A binary older than
+v0.3.0 is replaced, because the tree, element targeting, batch, browser, and
+--state-diff surface needs it.
 
 Supported release assets:
   darwin arm64  -> computer-use-macos-arm64.tar.gz
+                   computer-use-macos-arm64-app-unsigned.zip
   linux x86_64  -> computer-use-linux-x64.tar.gz
+
+On macOS the app bundle is preferred when the release ships one. It is
+extracted to ~/Applications and the install directory holds a symlink to it,
+so the binary keeps a stable bundle id and its macOS permission grant does
+not depend on which program started it. The bundle is ad-hoc signed and not
+notarized.
 
 Other systems try: cargo install computer-use --locked
 EOF
@@ -85,6 +97,10 @@ parse_args() {
         ;;
       --with-laya)
         WITH_LAYA=1
+        shift
+        ;;
+      --force)
+        FORCE=1
         shift
         ;;
       *)
@@ -166,7 +182,10 @@ version_is_acceptable() {
     [[ "${ver}" == "${want}" ]]
     return
   fi
-  version_ge "${ver}" "${MIN_VERSION}"
+  # The preferred version is the floor: an older binary does not have the
+  # tree, element targeting, batch, browser, or --state-diff surface, and
+  # leaving it in place is what strands an agent on a dead command.
+  version_ge "${ver}" "${PREFERRED_VERSION}"
 }
 
 installed_version() {
@@ -204,16 +223,18 @@ run_timeout() {
 
 find_binary() {
   local candidate
+  # The install directory wins over PATH. A stale binary earlier on PATH
+  # would otherwise shadow the one this script manages.
+  candidate="${INSTALL_DIR}/${BINARY_NAME}"
+  if [[ -x "${candidate}" ]]; then
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
   if candidate=$(command -v "${BINARY_NAME}" 2>/dev/null); then
     if [[ -n "${candidate}" && -x "${candidate}" ]]; then
       printf '%s\n' "${candidate}"
       return 0
     fi
-  fi
-  candidate="${INSTALL_DIR}/${BINARY_NAME}"
-  if [[ -x "${candidate}" ]]; then
-    printf '%s\n' "${candidate}"
-    return 0
   fi
   candidate="${HOME}/.cargo/bin/${BINARY_NAME}"
   if [[ -x "${candidate}" ]]; then
@@ -230,9 +251,21 @@ detect_target() {
   case "${os}:${arch}" in
     Darwin:arm64)
       ASSET_NAME="computer-use-macos-arm64.tar.gz"
+      APP_ASSET_NAME="computer-use-macos-arm64-app-unsigned.zip"
+      ;;
+    Darwin:x86_64)
+      ASSET_NAME=""
+      APP_ASSET_NAME=""
+      warn "no release asset for macOS on Intel. The published assets are arm64 only."
+      return 1
       ;;
     Linux:x86_64|Linux:amd64)
       ASSET_NAME="computer-use-linux-x64.tar.gz"
+      ;;
+    Linux:aarch64|Linux:arm64)
+      ASSET_NAME=""
+      warn "no release asset for Linux on arm64. The published assets are x86_64 only."
+      return 1
       ;;
     *)
       return 1
@@ -293,7 +326,7 @@ warn_if_older_than_preferred() {
   if [[ -z "${ver}" ]] || version_ge "${ver}" "${PREFERRED_VERSION}"; then
     return 0
   fi
-  warn "computer-use ${ver} is installed. tree --element targeting, --app/--window, --tier, policy check, batch, and browser need ${PREFERRED_VERSION}; re-run setup once it is released, or cargo install computer-use --locked."
+  warn "computer-use ${ver} is installed at a version older than ${PREFERRED_VERSION}. The tree, element targeting, batch, browser, and --state-diff surface need ${PREFERRED_VERSION}. Run scripts/setup.sh --force, or cargo install computer-use --locked."
 }
 
 download_to() {
@@ -381,11 +414,51 @@ pick_binary() {
 install_binary() {
   local src=$1
   mkdir -p "${INSTALL_DIR}" || return 1
-  cp -f "${src}" "${INSTALL_DIR}/${BINARY_NAME}" || return 1
-  chmod 755 "${INSTALL_DIR}/${BINARY_NAME}" || return 1
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    xattr -d com.apple.quarantine "${INSTALL_DIR}/${BINARY_NAME}" 2>/dev/null || true
+  # `mv` replaces the file in one step. `cp -f` over a running binary fails
+  # with ETXTBSY on Linux.
+  if ! mv -f "${src}" "${INSTALL_DIR}/${BINARY_NAME}.new" 2>/dev/null; then
+    cp -f "${src}" "${INSTALL_DIR}/${BINARY_NAME}.new" || return 1
   fi
+  chmod 755 "${INSTALL_DIR}/${BINARY_NAME}.new" || return 1
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    xattr -d com.apple.quarantine "${INSTALL_DIR}/${BINARY_NAME}.new" 2>/dev/null || true
+  fi
+  mv -f "${INSTALL_DIR}/${BINARY_NAME}.new" "${INSTALL_DIR}/${BINARY_NAME}" || return 1
+}
+
+# Extract the macOS app bundle and point the install directory at it. The
+# bundle carries a stable bundle id, so the macOS permission grant belongs to
+# the app and not to whichever program happened to start the binary.
+install_app_bundle() {
+  local base=$1 archive sumfile extract appdir binary target
+  archive="${TMP_ROOT}/${APP_ASSET_NAME}"
+  sumfile="${TMP_ROOT}/${APP_ASSET_NAME}.sha256.download"
+  log "downloading ${base}/${APP_ASSET_NAME}"
+  download_to "${base}/${APP_ASSET_NAME}" "${archive}" || return 1
+  download_to "${base}/${APP_ASSET_NAME}.sha256" "${sumfile}" || return 1
+  verify_archive "${archive}" "${sumfile}" || return 1
+  extract="${TMP_ROOT}/app"
+  mkdir -p "${extract}" || return 1
+  unzip -q -o "${archive}" -d "${extract}" || return 1
+  appdir=$(find "${extract}" -maxdepth 2 -name "${APP_NAME}" -type d | head -n 1)
+  if [[ -z "${appdir}" ]]; then
+    warn "the app archive did not contain ${APP_NAME}"
+    return 1
+  fi
+  binary="${appdir}/Contents/MacOS/${BINARY_NAME}"
+  if [[ ! -x "${binary}" ]]; then
+    warn "the app bundle did not contain an executable at ${binary}"
+    return 1
+  fi
+  mkdir -p "${APP_DIR}" || return 1
+  rm -rf "${APP_DIR:?}/${APP_NAME}" || return 1
+  mv "${appdir}" "${APP_DIR}/${APP_NAME}" || return 1
+  xattr -d com.apple.quarantine "${APP_DIR}/${APP_NAME}" 2>/dev/null || true
+  mkdir -p "${INSTALL_DIR}" || return 1
+  target="${INSTALL_DIR}/${BINARY_NAME}"
+  rm -f "${target}" || return 1
+  ln -sfn "${APP_DIR}/${APP_NAME}/Contents/MacOS/${BINARY_NAME}" "${target}" || return 1
+  log "installed ${APP_NAME} in ${APP_DIR} and linked ${target}"
 }
 
 warn_if_dir_not_on_path() {
@@ -408,6 +481,12 @@ install_release() {
     return 1
   fi
   base=$(release_base)
+  if [[ -n "${APP_ASSET_NAME}" ]]; then
+    if install_app_bundle "${base}"; then
+      return 0
+    fi
+    warn "the app bundle could not be installed; falling back to the plain binary"
+  fi
   archive="${TMP_ROOT}/${ASSET_NAME}"
   sumfile="${TMP_ROOT}/${ASSET_NAME}.sha256.download"
   log "downloading ${base}/${ASSET_NAME}"
@@ -516,7 +595,9 @@ main() {
 
   need_install=1
   status=0
-  if bin=$(find_binary); then
+  if [[ "${FORCE}" -eq 1 ]]; then
+    log "forced reinstall requested"
+  elif bin=$(find_binary); then
     if ver=$(installed_version "${bin}"); then
       if version_is_acceptable "${ver}"; then
         log "computer-use ${ver} already installed at ${bin}"

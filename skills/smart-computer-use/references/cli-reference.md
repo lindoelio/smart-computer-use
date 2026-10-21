@@ -20,15 +20,15 @@ Every action writes one JSON object to stdout. `--help` and `--version` are huma
 
 ## Version compatibility
 
-This skill targets **0.2.0**. Anything not listed in the "Works on 0.1.0" column needs 0.2.0 and fails with `invalid_arguments` (unknown subcommand, exit 2) or `unsupported` on an older binary.
+This skill targets **0.3.0**. Anything not listed in the "Works on 0.1.0" column needs 0.2.0 or 0.3.0 and fails with `invalid_arguments` (unknown subcommand, exit 2) or `unsupported` on an older binary.
 
-| Surface | Works on 0.1.0 | Needs 0.2.0 |
-| --- | --- | --- |
-| Subcommands | `screenshot` `click` `move` `type` `key` `scroll` `get-state` `wait` `displays` `serve` `exec` | `triple-click` `press` `set-value` `select-text` `perform-action` `scroll-to` `focus` `drag` `mouse-down` `mouse-up` `hold-key` `clipboard` `zoom` `list-apps` `list-windows` `launch` `activate` `quit` `tree` `ocr` `menu` `apple-event` `shortcuts` `dock` `spaces` `policy` `pause` `resume` `doctor` `isolation` `session` `overlay` `browser` |
-| Global flags | `--pretty` `--json` | `--app` `--window` `--element` `--require-visible` `--diff` `--full` `--session` `--state` `--screenshot` `--coord` `--adapter` `--policy` `--confirm-cmd` `--tier` `--synthetic-focus` `--allow-foreground` `--require-background` `--no-overlay` `--cdp` `--cdp-url` `--display` `--exec` |
-| Error codes | `invalid_arguments` `execution_failed` `io_error` `unsupported` | `app_not_found` `window_not_found` `element_not_found` `stale_element` `permission_required` `policy_denied` `confirm_required` `confirm_denied` `blocked_url` `paused` `cdp_unavailable` `display_unavailable` |
+| Surface | Works on 0.1.0 | Needs 0.2.0 | Needs 0.3.0 |
+| --- | --- | --- | --- |
+| Subcommands | `screenshot` `click` `move` `type` `key` `scroll` `get-state` `wait` `displays` `serve` `exec` | `triple-click` `press` `set-value` `select-text` `perform-action` `scroll-to` `focus` `drag` `mouse-down` `mouse-up` `hold-key` `clipboard` `zoom` `list-apps` `list-windows` `launch` `activate` `quit` `tree` `ocr` `menu` `apple-event` `shortcuts` `dock` `spaces` `policy` `pause` `resume` `doctor` `isolation` `session` `overlay` `browser` | `batch` `cursor-position` |
+| Global flags | `--pretty` `--json` | `--app` `--window` `--element` `--require-visible` `--diff` `--full` `--session` `--state` `--screenshot` `--coord` `--adapter` `--policy` `--confirm-cmd` `--tier` `--synthetic-focus` `--allow-foreground` `--require-background` `--no-overlay` `--cdp` `--cdp-url` `--display` `--exec` | `--state-diff` |
+| Error codes | `invalid_arguments` `execution_failed` `io_error` `unsupported` | `app_not_found` `window_not_found` `element_not_found` `stale_element` `permission_required` `policy_denied` `confirm_required` `confirm_denied` `blocked_url` `paused` `cdp_unavailable` `display_unavailable` | none added; `policy check` and the `tree` response gained the `code` and `baseline` fields |
 
-Without element targeting you can only click blind coordinates. The 0.2.0 main loop in [SKILL.md](../SKILL.md) depends on `tree`, `--element`, and `--app`/`--window`. Run `bash scripts/setup.sh` and confirm with `computer-use --version` before relying on them.
+Without element targeting you can only click blind coordinates. The 0.3.0 main loop in [SKILL.md](../SKILL.md) depends on `tree`, `--element`, `--app`/`--window`, `--session`, and `--state-diff`. Run `bash scripts/setup.sh` and confirm with `computer-use --version` before relying on them.
 
 ## Exit codes
 
@@ -46,7 +46,7 @@ Without element targeting you can only click blind coordinates. The 0.2.0 main l
 
 ## Global flags
 
-Applies to every subcommand. The JSON equivalents are sibling keys of `action` and are stripped before `Action` is decoded.
+Applies to every subcommand, except `--json` and `--exec`, which are top-level only. The JSON equivalents are sibling keys of `action` and are stripped before `Action` is decoded.
 
 | Flag | JSON key | Default | Meaning |
 | --- | --- | --- | --- |
@@ -57,9 +57,10 @@ Applies to every subcommand. The JSON equivalents are sibling keys of `action` a
 | `--element <N>` | `element` | none | Index from the latest `tree` for this app and window. |
 | `--require-visible` | `require_visible` | false | Fail when the element is outside the window and scroll-into-view cannot run. |
 | `--diff` | `diff` | true once a baseline exists | Print a diff against the cached tree. |
-| `--full` | `full` | off | Print the full tree and replace the cached baseline. |
-| `--session <ID>` | `session` | process id | Cache namespace. Use it to keep parallel runs apart. |
+| `--full` | `full` | off | Print the full tree. The baseline is always the most recent observation. |
+| `--session <ID>` | `session` | process id | Cache namespace. Use it to keep parallel runs apart — and to keep the baseline alive between commands. |
 | `--state` | `return_state` | false | Attach the post-action accessibility tree. |
+| `--state-diff` | `state_diff` | false | Attach only the post-action delta. Implies `--state` and omits `state.tree`. |
 | `--screenshot` | `include_screenshot` | false | With `--state`, also attach a window image. |
 | `--coord <screen\|image>` | `coord` | `screen` on the CLI, `image` inside adapters | Coordinate space for `x`/`y`. |
 | `--adapter <native\|openai\|anthropic>` | `adapter` | `native` | Schema translator for `exec`, `serve`, and `--json`. |
@@ -104,6 +105,90 @@ A binary built without `cdp` answers every `browser` command with:
 ```
 
 `cdp_unavailable` means the opposite: the feature **is** built in, but Chrome is not attachable (no debugging port, no page target, websocket died). Upstream `docs/CLI.md` folds both into `cdp_unavailable`; the binary is the contract, and the binary uses `unsupported` for the missing feature. Check both codes when you branch on browser failures.
+
+## Command coverage
+
+Every command the binary accepts, and where the skill teaches it. `loop` means the main loop in `SKILL.md` uses it, `capability` means the "Capabilities you should reach for" table points at it, `safety` means it appears in the safety rules, and `reference` means it is documented here but is not part of the loop.
+
+| Command | Where |
+| --- | --- |
+| `screenshot` | loop, capability |
+| `click` | loop |
+| `triple-click` | capability |
+| `press` | loop |
+| `set-value` | loop |
+| `select-text` | loop |
+| `perform-action` | capability |
+| `scroll-to` | loop |
+| `focus` | capability |
+| `move` | reference |
+| `drag` | capability |
+| `mouse-down` | capability |
+| `mouse-up` | capability |
+| `type` | loop |
+| `key` | loop |
+| `hold-key` | capability |
+| `clipboard` | capability |
+| `zoom` | capability |
+| `scroll` | reference |
+| `get-state` | loop |
+| `wait` | reference |
+| `displays` | reference |
+| `isolation` | reference |
+| `list-apps` | loop |
+| `list-windows` | loop |
+| `launch` | capability |
+| `activate` | capability |
+| `quit` | safety |
+| `policy` | safety |
+| `pause` | safety |
+| `resume` | safety |
+| `doctor` | loop |
+| `tree` | loop |
+| `ocr` | loop |
+| `menu` | capability |
+| `apple-event` | capability |
+| `shortcuts` | capability |
+| `dock` | capability |
+| `spaces` | capability |
+| `session` | reference |
+| `serve` | reference |
+| `exec` | reference |
+| `batch` | loop |
+| `cursor-position` | reference |
+| `overlay` | reference |
+| `browser` | loop |
+
+## Post-action state
+
+A mutating action with `--state` returns a `state` block beside the action result:
+
+```json
+{
+  "ok": true,
+  "action": "press",
+  "state": {
+    "app": "com.apple.Notes",
+    "pid": 812,
+    "window_id": 44,
+    "revision": 18114448678970534631,
+    "tree": "[0] AXWindow ...",
+    "diff": "~ [9] AXTextField value: \"old\" -> \"new\"",
+    "truncated": false,
+    "baseline": "existing"
+  }
+}
+```
+
+`state.tree` is the whole numbered tree and `state.diff` is the delta against the previous observation. On a busy window the tree runs to tens of kilobytes while the delta is a few lines, so ask for the delta only:
+
+```bash
+computer-use press --session notes --app Notes --element 12 --state-diff
+```
+
+`--state-diff` implies `--state` and omits `state.tree`. The block keeps `app`, `pid`, `window_id`, `revision`, `diff`, `truncated`, and `baseline`.
+
+A read-only action never attaches a state block, and neither does a failed action. When the action succeeded but the tree snapshot failed, the block is present with null fields and a `warnings` entry names the failure.
 
 ## Commands
 
@@ -279,7 +364,18 @@ A built-in deny list covers Terminals and Password Managers and runs before the 
 policy check   Report allow or deny for `--app`.
 ```
 
-Returns `{ok: true, decision: "allow" | "deny", source: "builtin" | "admin" | "user" | "default", code: "ok" | "policy_denied", ...}` without performing an action. A `deny` decision keeps `code: "ok"` and `ok: true`, so branch on `decision`, not on `ok`.
+Returns `{ok: true, decision: "allow" | "deny", source: "builtin" | "admin" | "user" | "default", code: "ok" | "policy_denied", ...}` without performing an action. A `deny` decision keeps `ok: true` and reports `code: "policy_denied"`, so branch on `decision`.
+
+A user policy file can exempt one entry of the built-in deny list:
+
+```toml
+version = 1
+
+[builtin_deny]
+exempt = ["app.crynta.terax"]
+```
+
+The exemption matches a bundle id, an executable name, or a `.app` bundle name, and covers the whole app. The admin file cannot set it.
 
 ### `pause`, `resume`
 
@@ -292,7 +388,9 @@ Returns `{ok: true, decision: "allow" | "deny", source: "builtin" | "admin" | "u
       --open-settings      Open System Settings to the first missing permission pane (macOS only).
 ```
 
-Returns `{ok, permissions_ok, missing, fix, identity, accessibility, screen_capture, post_events, input_monitoring, input_monitor, atspi_bus, session, portal, uiaccess, integrity, bundle_id, responsible_app, note, text}`. `permissions_ok` and `missing` are the grant aggregate. Envelope `ok: true` means the report was produced, so the process exits 0 even when a permission is missing — branch on `permissions_ok`.
+Returns `{ok, permissions_ok, missing, fix, fixes, identity, accessibility, screen_capture, post_events, input_monitoring, input_monitor, atspi_bus, session, portal, uiaccess, integrity, bundle_id, responsible_app, note, text}`. `permissions_ok` and `missing` are the grant aggregate. `fix` is an array **parallel** to `missing`: index `i` of `fix` describes `missing[i]`; `fixes` carries the same entries as one-line strings. Envelope `ok: true` means the report was produced, so the process exits 0 even when a permission is missing — branch on `permissions_ok`.
+
+`identity` reports whether the binary runs inside the app bundle, its bundle id, its signature, and the program responsible for the grant. A binary outside the bundle inherits the permission of whatever started it.
 
 ### `tree`
 
@@ -302,7 +400,11 @@ Prints the numbered accessibility tree for the key window, one line per node:
 [n] ROLE "title" @x,y wxh value=... actions=...
 ```
 
-`--diff` (default once a baseline exists) prints only what changed. `--full` prints everything and replaces the baseline. Truncation caps: 40 children (`… +N`), depth 12, 400 lines, then `truncated=true`. `http`/`https` values keep scheme, host, and at most 60 characters of path; the query is stripped.
+`--diff` (default once a baseline exists) prints only what changed. `--full` prints everything; the baseline is always the most recent observation. Truncation caps: 40 children (`… +N`), depth 12, 400 lines, then `truncated=true`. `http`/`https` values keep scheme, host, and at most 60 characters of path; the query is stripped.
+
+The response carries `baseline: "created" | "existing"` — `created` when the observation had no previous tree and the printed text is the whole tree, `existing` when the printed text is a delta.
+
+A diff line starts with `+` (added node), `-` (removed node) or `~` (changed value, `~ [9] AXTextField value: "old" -> "new"`).
 
 ```bash
 computer-use tree --app Notes --window 0
@@ -334,7 +436,7 @@ dock click  --title <T>   Case-insensitive
 spaces
 ```
 
-`apple-event` runs `osascript -e`. The script body is never logged verbatim; the audit line records `script_bytes` and a stable FNV-1a 64-bit hash. `shortcuts run` invokes `["shortcuts", "run", name]` with a 60 s timeout.
+`apple-event` runs `osascript -e`. The script body is never logged verbatim; the response body carries `script_bytes` and a stable FNV-1a 64-bit hash, while the audit line records only sizes. `shortcuts run` invokes `["shortcuts", "run", name]` with a 60 s timeout.
 
 ### `session`
 
@@ -343,9 +445,9 @@ session end     Restore Electron accessibility flags this process changed and st
 session prune   --dry-run   --ttl <TTL>   Default 86400 seconds (24 hours).
 ```
 
-### `serve`, `exec`, `overlay`
+### `serve`, `exec`, `batch`, `cursor-position`, `overlay`
 
-`serve` reads newline-delimited JSON from stdin and writes one JSON response per line. Stdin protocol, not a TCP server. Exits 0 on a clean end of input. `exec` runs one JSON action from an argument and honors `--pretty`. `overlay serve` draws a click-through ring at the agent point; the main CLI sends `{x, y, session}` on `<cache>/overlay.sock` after a successful positional action, a missing helper adds the note `overlay helper not running` and the action still succeeds, and `--no-overlay` skips the socket.
+`serve` reads newline-delimited JSON from stdin and writes one JSON response per line. Stdin protocol, not a TCP server. Exits 0 on a clean end of input. `exec` runs one JSON action from an argument and honors `--pretty`. `batch` runs a batch of actions from an argument: the JSON object has `action: "batch"` and an `actions` array; one resolved target, one revision sequence, each step re-validated; a nested batch is `invalid_arguments`; a step's own `return_state` is ignored because the batch attaches one post-state at the end. `cursor-position` prints the pointer position. `overlay serve` draws a click-through ring at the agent point; the main CLI sends `{x, y, session}` on `<cache>/overlay.sock` after a successful positional action, a missing helper adds the note `overlay helper not running` and the action still succeeds, and `--no-overlay` skips the socket.
 
 ### `browser` (requires the `cdp` feature)
 
@@ -422,6 +524,10 @@ Attach only. The CLI flag is `--cdp`, the JSON field is `cdp: true`. `computer-u
 | `browser_type` | `text`, `selector` (optional), `target_id` | yes |
 | `browser_eval` | `script`, `target_id` | yes |
 
+### Action aliases
+
+The protocol also accepts a kebab-case spelling of these actions: `browser-activate`, `browser-click`, `browser-eval`, `browser-navigate`, `browser-text`, `browser-type`, `clipboard-set`, `dock-click`, `dock-list`, `menu-click`, `menu-list`, `session-prune`, `shortcuts-run`. The table above lists the canonical name of each.
+
 ### Batch
 
 `action: "batch"` runs one resolved target through one cache revision sequence. `stop_on_error` defaults true and sets `stopped_at`. Each step re-validates. `return_state` runs once at the end, and a step's own `return_state` is ignored. A nested batch is `invalid_arguments`.
@@ -432,13 +538,13 @@ Attach only. The CLI flag is `--cdp`, the JSON field is `cdp: true`. `computer-u
 
 ### Adapters
 
-`native` passes through. `openai` translates the OpenAI `computer` tool shape (click, double_click, scroll, type, keypress, move, wait, screenshot, back, forward, drag, hold_key, zoom, cursor_position) and sets `coord=image`. `anthropic` translates Anthropic `computer_20251124` (left/right/middle click, double_click, mouse_move, scroll, type, key, wait, zoom, cursor_position, triple_click, left_click_drag, mouse_down, mouse_up, hold_key) and sets `coord=image`.
+`native` passes through. `openai` translates nine actions of the OpenAI `computer` tool shape (screenshot, click, double_click, scroll, type, keypress, move, drag, wait) and sets `coord=image`; `back` and `forward` are mouse-button values, not actions, and `hold_key`, `zoom` and `cursor_position` have no OpenAI mapping. `anthropic` translates Anthropic `computer_20251124` (left/right/middle click, double_click, triple_click, mouse_move, left_click_drag, mouse_down, mouse_up, hold_key, scroll, type, key, wait, zoom, cursor_position) and sets `coord=image`; the mouse buttons are named `left_mouse_down` and `left_mouse_up`.
 
 Image coordinates need a stored screenshot map. There is no auto-detection.
 
 ### `--state`
 
-`--state` (JSON `return_state`) attaches the post-action `state.tree` as numbered full text, `state.diff`, and the new revision. That diff becomes the `tree --diff` baseline. Read-only actions ignore it. A tree or screenshot failure keeps the action result and adds `warnings`.
+`--state` (JSON `return_state`) attaches the post-action `state.tree` as numbered full text, `state.diff`, and the new revision. `--state-diff` (JSON `state_diff`) attaches the same block without the tree. That diff becomes the `tree --diff` baseline. Read-only actions ignore it. A tree or screenshot failure keeps the action result and adds `warnings`.
 
 ## Error codes
 
@@ -488,6 +594,6 @@ Cache files are JSON, mode `0600` on Unix. They hold the last revision, the rend
 
 ## CLI/library parity
 
-Every JSON action has a CLI command, and every CLI command has a matching `Action` variant or runs through `dispatch` (`serve`, `exec`, `overlay`, the `browser` feature gate, `policy_check`, `pause`, `resume`). Upstream ships a test, `tests/cli_doc_matches_help.rs`, that parses its own `docs/CLI.md` and asserts each action name and subcommand is reachable on a fresh build.
+Every CLI command has a matching `Action` variant or runs through `dispatch` (`serve`, `exec`, `batch`, `overlay`, the `browser` feature gate, `policy_check`, `pause`, `resume`). Two JSON actions are also reachable as commands: `batch` and `cursor_position` (as `cursor-position`). Upstream ships a test, `tests/cli_doc_matches_help.rs`, that parses its own `docs/CLI.md` and asserts each action name and subcommand is reachable on a fresh build.
 
 This file is a copy for the agent. It is regenerated in this repository, not upstream.

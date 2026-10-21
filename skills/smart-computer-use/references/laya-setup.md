@@ -1,6 +1,6 @@
 # Laya setup
 
-Laya is optional and experimental. The skill runs without it. A failed install must not block `computer-use`.
+Laya is optional and experimental, and **not measured**: no latency or accuracy benchmark exists. The skill runs without it, and a failed install must not block `computer-use`. The default path is the main model reading the tree.
 
 The installer is `scripts/install-laya.sh`. `scripts/setup.sh --with-laya` calls it with `--yes` and keeps going if it cannot install Laya.
 

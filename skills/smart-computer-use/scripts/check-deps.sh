@@ -2,11 +2,12 @@
 # Report computer-use and OS permission status. Never changes grants.
 set -euo pipefail
 
+
 JSON=0
 INSTALL_DIR="${COMPUTER_USE_INSTALL_DIR:-${HOME}/.local/bin}"
 BINARY_NAME="computer-use"
 TMP_ROOT=""
-PREFERRED_VERSION="0.2.0"
+PREFERRED_VERSION="0.3.0"
 
 CHECK_NAMES=()
 CHECK_STATUS=()
@@ -145,16 +146,18 @@ run_timeout() {
 
 find_binary() {
   local candidate
+  # The install directory wins over PATH, so the binary this skill manages is
+  # the one that gets reported.
+  candidate="${INSTALL_DIR}/${BINARY_NAME}"
+  if [[ -x "${candidate}" ]]; then
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
   if candidate=$(command -v "${BINARY_NAME}" 2>/dev/null); then
     if [[ -n "${candidate}" && -x "${candidate}" ]]; then
       printf '%s\n' "${candidate}"
       return 0
     fi
-  fi
-  candidate="${INSTALL_DIR}/${BINARY_NAME}"
-  if [[ -x "${candidate}" ]]; then
-    printf '%s\n' "${candidate}"
-    return 0
   fi
   candidate="${HOME}/.cargo/bin/${BINARY_NAME}"
   if [[ -x "${candidate}" ]]; then
@@ -838,6 +841,53 @@ emit_human() {
   done
 }
 
+# Report whether the binary runs inside the app bundle. Inside the bundle the
+# macOS permission grant belongs to `ai.lindoelio.computer-use`; outside it,
+# the grant belongs to whichever program started the binary.
+check_identity() {
+  local bin=$1 line bundled bundle_id
+  line=$(run_timeout 20 "${bin}" doctor 2>/dev/null | parse_doctor_identity)
+  if [[ -z "${line}" ]]; then
+    add_check "identity" "unknown" "The CLI did not report a TCC identity."
+    return 0
+  fi
+  bundled=${line%%$'\t'*}
+  bundle_id=${line#*$'\t'}
+  if [[ "${bundled}" == "true" ]]; then
+    add_check "identity" "ok" "The binary runs inside the app bundle (${bundle_id:-unknown bundle id}). The macOS permission grant belongs to the app, not to the program that started it."
+  else
+    add_check "identity" "warn" "The binary runs outside the app bundle, so the macOS permission grant belongs to the program that started it and changes with the host. Run scripts/setup.sh to install the bundle and keep the grant stable."
+  fi
+}
+
+# Read identity.bundled and identity.bundle_id out of the doctor report.
+parse_doctor_identity() {
+  local file
+  ensure_tmp
+  file="${TMP_ROOT}/doctor-identity.json"
+  if ! cat >"${file}"; then
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    return 0
+  fi
+  python3 - "${file}" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        report = json.load(handle)
+except Exception:
+    sys.exit(0)
+
+identity = report.get("identity") or {}
+bundled = identity.get("bundled")
+bundle_id = identity.get("bundle_id") or ""
+print(f"{str(bool(bundled)).lower()}\t{bundle_id}")
+PY
+}
+
 should_fail() {
   local cli_path=$1
   local i name status
@@ -855,6 +905,9 @@ should_fail() {
       return 0
     fi
     if [[ "${name}" == "libraries" && "${status}" == "missing" ]]; then
+      return 0
+    fi
+    if [[ "${name}" == "cli" && "${status}" == "outdated" ]]; then
       return 0
     fi
     i=$((i + 1))
@@ -879,7 +932,7 @@ main() {
       version=""
     fi
     if [[ -n "${version}" ]] && version_older_than "${version}" "${PREFERRED_VERSION}"; then
-      add_check "cli" "ok" "computer-use ${version} at ${cli_path}. ${PREFERRED_VERSION} is preferred: tree --element targeting, --app/--window, --tier, policy check, batch, and browser need it. Re-run scripts/setup.sh once it is released."
+      add_check "cli" "outdated" "computer-use ${version} at ${cli_path}. ${PREFERRED_VERSION} is required: the tree, element targeting, batch, browser, and --state-diff surface need it. Run scripts/setup.sh to upgrade."
     else
       add_check "cli" "ok" "computer-use ${version:-unknown} at ${cli_path}"
     fi
@@ -919,6 +972,9 @@ main() {
           probe_detail=$(append_hint "${probe_detail}" "${SCREEN_RECORDING_HINT}" "privacy & security > screen recording")
         fi
         add_check "screen_recording" "${probe_status}" "${probe_detail}"
+      fi
+      if [[ -n "${cli_path}" ]]; then
+        check_identity "${cli_path}"
       fi
       ;;
     linux)

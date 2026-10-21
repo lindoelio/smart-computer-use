@@ -10,7 +10,7 @@ flowchart TD
   doctor0 -->|missing| stop0[Tell user the pane. Do not retry]
   planner --> observe[Observe: tree --diff, or ocr when the tree is empty]
   observe --> summary[Main model summarizes tree and OCR text]
-  summary --> gate{Laya enabled}
+  summary --> gate{Laya enabled and asked for}
   gate -->|no| mainPick[Main model picks the element index]
   gate -->|yes| layaAsk[Laya answers choice score or noul]
   layaAsk --> band{answer_confidence}
@@ -24,7 +24,7 @@ flowchart TD
   askUser -->|approved| policy
   askUser -->|declined| planner
   policy -->|deny| blocked[policy_denied. Report it]
-  policy -->|allow| act[Act on --element with --state]
+  policy -->|allow| act[Act on --element with --state-diff]
   act --> stale{stale_element?}
   stale -->|yes| reread[Re-read tree --full. Re-derive the index]
   reread --> act
@@ -39,9 +39,9 @@ flowchart TD
 | Piece | Role |
 | --- | --- |
 | Main model | Plans, targets the app and window, reads the tree, confirms sensitive actions, and takes over when Laya is absent or unsure. |
-| Laya | Optional local classifier. One forward pass answers `choice`, `score`, and `noul` questions about the text state. |
+| Laya | Optional local classifier, experimental and unbenchmarked. One forward pass answers `choice`, `score`, and `noul` questions about the text state. |
 | `computer-use` CLI | Discovery, tree, element and coordinate actions, tiers, policy, audit, batch, adapters, and CDP attach. One JSON object per action. |
-| Setup scripts | Install the CLI (preferring 0.2.0, falling back to the latest release), optionally install Laya, and report permissions. |
+| Setup scripts | Install the CLI (preferring 0.3.0, falling back to the latest release), install the macOS app bundle, optionally install Laya, and report permissions and the CLI version. |
 
 ## Three layers of state
 
@@ -51,7 +51,9 @@ flowchart TD
 | Element tree and revision | CLI session cache | The session | Numbered nodes plus a structural revision. `stale_element` compares against it. |
 | Screen pixels | CLI screenshot map | The last capture | `image_to_screen` / `screen_to_image`; `--coord image` reads it. |
 
-The session cache is `${XDG_CACHE_HOME:-~/.cache}/computer-use/sessions/<session>/` (`%LOCALAPPDATA%\computer-use\cache\sessions\<session>\` on Windows), mode `0600` on Unix. `--session <ID>` namespaces it; the default is the process id. `--state` writes a new revision and turns that diff into the next `tree --diff` baseline, which is what makes the loop one call per step.
+The session cache is `${XDG_CACHE_HOME:-~/.cache}/computer-use/sessions/<session>/` (`%LOCALAPPDATA%\computer-use\cache\sessions\<session>\` on Windows), mode `0600` on Unix. `--session <ID>` namespaces it; **the default is the process id**, so a fresh `computer-use` process starts with an empty cache and the baseline does not survive between commands. A flow must pass one `--session` id to every command, or every observation pays for the whole tree again.
+
+Every observation becomes the next baseline. `--state-diff` returns the post-action delta and leaves that delta as the baseline, which is what makes the loop one command per step. `--state` returns the same delta **and** the whole numbered tree, which is the expensive half of the payload; the loop reads `state.diff` and ignores `state.tree`.
 
 ## Observation order
 
@@ -81,7 +83,7 @@ Tiers decide how much of the session is disturbed:
 
 Policy, confirm hook, audit, and pause live in the CLI, not in the model:
 
-- `policy.toml` (user and admin) plus a built-in deny list for terminals and password managers. Deny wins; admin allow entries do not grant.
+- `policy.toml` (user and admin) plus a built-in deny list for terminals and password managers. Deny wins; admin allow entries do not grant. A user file may exempt one built-in entry with `[builtin_deny]`.
 - A confirm hook for sensitive actions, returning `confirm_required` or `confirm_denied`.
 - An append-only `audit.jsonl` recording `decision`, `source`, `code`, and sizes — never text, never script bodies.
 - A listen-only `CGEventTap` that flips `paused` when a human touches the machine.
@@ -100,7 +102,7 @@ The CLI does not read `~/.config/smart-computer-use/config.json`. The agent read
 - `stale_element` — the UI moved under a cached index. The body carries the new tree. Re-derive the index; do not resend the same one and do not route around it with coordinates.
 - `element_not_found` — the index is not in the tree at all, or there is no session cache. Run `tree` first.
 - `permission_required` — a grant is missing, not an argument. Run `doctor`, tell the user which pane, and stop. Retrying changes nothing.
-- `policy_denied` — the built-in list or a policy file refused it. Do not look for another route.
+- `policy_denied` — the built-in list or a policy file refused it. Do not look for another route, and do not write a `[builtin_deny]` exemption. A read-only command can be refused too, when the app it resolves is on the list.
 - `confirm_required` / `confirm_denied` — no hook, or the hook said no. Ask the user.
 - `paused` — a human is at the keyboard. Wait, or `resume` if they told you to.
 - `display_unavailable` — the screen is locked or the display is asleep.

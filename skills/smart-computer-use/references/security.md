@@ -63,13 +63,26 @@ Terminals and password managers are denied on every OS, before the backend runs.
 
 So the skill **cannot** drive a terminal through this CLI. It also cannot read a stored password.
 
+A user policy file can exempt one entry of the built-in list:
+
+```toml
+version = 1
+
+[builtin_deny]
+exempt = ["app.crynta.terax"]
+```
+
+The exemption matches a bundle id, an executable name, or a `.app` bundle name, and covers the whole app. The admin file cannot set it, so a machine-wide policy stays intact. An exemption is the user's deliberate act: the agent must never write one to make a refusal go away.
+
 ### Checking without acting
 
 ```bash
 computer-use policy check --app Notes
 ```
 
-Returns `{ok: true, decision: "allow"|"deny", source: "builtin"|"admin"|"user"|"default", code: "ok"|"policy_denied"}`. It performs no action. A `deny` decision keeps `ok: true` and `code: "ok"` — branch on `decision`, never on `ok`.
+Returns `{ok: true, decision: "allow"|"deny", source: "builtin"|"admin"|"user"|"default", code: "ok"|"policy_denied"}`. It performs no action. A `deny` decision keeps `ok: true` and reports `code: "policy_denied"` — branch on `decision`, never on `ok`.
+
+A read-only command can still be refused: `get-state` resolves the frontmost app, so an app on the built-in deny list makes it return `policy_denied`. That is policy working, not a bug to route around.
 
 ### Blocked URLs
 
@@ -79,7 +92,7 @@ Returns `{ok: true, decision: "allow"|"deny", source: "builtin"|"admin"|"user"|"
 
 `--confirm-cmd <COMMAND>` or `COMPUTER_USE_CONFIRM_CMD`, or `[confirm].command`. The hook's stdin receives one JSON object. Exit 0 proceeds. A non-zero exit, a timeout, or a spawn failure is `confirm_denied`. No hook at all is `confirm_required`.
 
-Sensitive actions include quitting an app (including `--force`) and `clipboard set`. Apple events are not classified as sensitive beyond the built-in deny list.
+Sensitive actions include quitting an app (including `--force`), `clipboard set`, and the key combinations `cmd+q` and `alt+F4`. Apple events are not classified as sensitive beyond the built-in deny list.
 
 ### Secure fields
 
@@ -130,7 +143,7 @@ computer-use doctor --open-settings
 
 `doctor` returns `{ok, permissions_ok, missing, fix, identity, ...}`. **The envelope `ok: true` means the report was produced**, so the process exits 0 even with a permission missing. Branch on `permissions_ok`. Each missing permission has a `fix` object with the pane, URL, target, and instruction.
 
-`identity` reports the binary path, bundle id, whether the process is `Computer Use.app`, `codesign` status, team id, and the responsible app. A bare binary has no bundle id, and TCC grants do not follow a moved or re-signed binary. `docs/PACKAGING.md` upstream covers Developer ID signing and notarization; **those secrets are not configured today**, so `Computer Use.app` is ad-hoc signed.
+`identity` reports the binary path, bundle id, whether the process is `Computer Use.app`, `codesign` status, team id, and the responsible app. A bare binary has no bundle id, and TCC grants do not follow a moved or re-signed binary: the grant belongs to the responsible app, so it changes with whatever starts the CLI. `scripts/setup.sh` installs the bundle into `~/Applications` and links the install directory to it, which keeps the grant stable. `docs/PACKAGING.md` upstream covers Developer ID signing and notarization; **those secrets are not configured today**, so `Computer Use.app` is ad-hoc signed.
 
 `scripts/check-deps.sh` tries `get-state` and a temporary screenshot. It does not reset TCC, change grants, or open System Settings.
 
@@ -142,7 +155,7 @@ Run in an interactive desktop session, not Session 0. The accessibility tree com
 
 The CLI talks to X11 (`DISPLAY` set, same user as the session); `xdotool` on `PATH` helps. The tree comes from AT-SPI (`source: "atspi"`), and `Role::PasswordText` is the only redaction signal. With the `portal` feature, ScreenCast capture and RemoteDesktop input work on Wayland; a cancelled dialog is `permission_required` and does **not** fall back.
 
-Still `unsupported` on Linux in 0.2.0: `list_apps`, `list_windows`, `launch`, `activate`, `quit`, `ocr`, and therefore `screenshot --app`. Tier `event` with explicit `--x/--y` works without window enumeration. `drag`, button hold, `hold-key`, and free-text typing are unsupported on the portal tier.
+Still `unsupported` on Linux: `list_apps`, `list_windows`, `launch`, `activate`, `quit`, `ocr`, and therefore `screenshot --app`. Tier `event` with explicit `--x/--y` works without window enumeration. `drag`, button hold, `hold-key`, and free-text typing are unsupported on the portal tier.
 
 Build-from-source packages on Debian/Ubuntu:
 

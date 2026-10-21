@@ -5,6 +5,8 @@
 param(
     [Alias('with-laya')]
     [switch]$WithLaya,
+    [Alias('force')]
+    [switch]$Force,
     [Alias('help')]
     [switch]$Help
 )
@@ -12,8 +14,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$MinVersion = @(0, 1, 0)
-$PreferredVersion = @(0, 2, 0)
+$PreferredVersion = @(0, 3, 0)
 $Repo = 'lindoelio/computer-use'
 $RepoUrl = "https://github.com/$Repo"
 $ApiUrl = "https://api.github.com/repos/$Repo"
@@ -24,29 +25,31 @@ $script:ResolvedTag = $null
 
 function Show-Usage {
     @"
-Usage: setup.ps1 [-WithLaya] [-Verbose] [-Help]
+Usage: setup.ps1 [-WithLaya] [-Force] [-Verbose] [-Help]
 
 Install the computer-use CLI into `$HOME\.local\bin.
 
   -WithLaya   Also run install-laya.sh when bash is available.
+  -Force      Reinstall even when an acceptable version is already present.
   -Verbose    Print progress.
   -Help       Show this help.
 
 Environment:
-  COMPUTER_USE_VERSION      Release tag to pin, for example v0.2.0 or 0.2.0.
-                            Default: v0.2.0 when that release exists, otherwise
+  COMPUTER_USE_VERSION      Release tag to pin, for example v0.3.0 or 0.3.0.
+                            Default: v0.3.0 when that release exists, otherwise
                             the latest GitHub release.
   COMPUTER_USE_INSTALL_DIR  Install directory. Default: ~\.local\bin.
 
 Release selection:
-  v0.2.0 is preferred. The script probes the GitHub releases API (no auth
-  required) and installs v0.2.0 when it is published. When it is not, it falls
+  v0.3.0 is preferred. The script probes the GitHub releases API (no auth
+  required) and installs v0.3.0 when it is published. When it is not, it falls
   back to the latest published release instead of failing.
 
 If computer-use is already on PATH or in `$HOME\.local\bin at an acceptable
 version, the download is skipped. Acceptable means >= 0.1.0, or exactly
-COMPUTER_USE_VERSION when that variable is set. A binary older than v0.2.0
-still installs, with a warning that the newer commands need v0.2.0.
+COMPUTER_USE_VERSION when that variable is set. A binary older than v0.3.0
+is replaced, because the tree, element targeting, batch, browser, and
+--state-diff surface needs it.
 
 The release asset is computer-use-windows-x64.zip with a matching .sha256
 file. Checksums are verified with Get-FileHash. On failure the script tries
@@ -95,10 +98,24 @@ function Test-VersionAcceptable {
         if ($null -eq $want) { return $false }
         return ($Got[0] -eq $want[0] -and $Got[1] -eq $want[1] -and $Got[2] -eq $want[2])
     }
-    return (Test-VersionAtLeast $Got $MinVersion)
+    # The preferred version is the floor: an older binary does not have the
+    # tree, element targeting, batch, browser, or --state-diff surface, and
+    # leaving it in place strands an agent on a dead command.
+    return (Test-VersionAtLeast $Got $PreferredVersion)
 }
 
 function Get-ComputerUseCommand {
+    # The install directory wins over PATH. A stale binary earlier on PATH
+    # would otherwise shadow the one this script manages.
+    $candidates = @(
+        (Join-Path $InstallDir $BinaryName),
+        (Join-Path $InstallDir 'computer-use')
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
     $commands = @(Get-Command computer-use -ErrorAction SilentlyContinue)
     if ($commands.Count -eq 0) {
         $commands = @(Get-Command computer-use.exe -ErrorAction SilentlyContinue)
@@ -109,8 +126,6 @@ function Get-ComputerUseCommand {
         }
     }
     $candidates = @(
-        (Join-Path $InstallDir $BinaryName),
-        (Join-Path $InstallDir 'computer-use'),
         (Join-Path $HOME '.cargo\bin\computer-use.exe'),
         (Join-Path $HOME '.cargo\bin\computer-use')
     )
@@ -182,7 +197,7 @@ function Write-WarningIfOlderThanPreferred {
     param($Got)
     if ($null -eq $Got) { return }
     if (Test-VersionAtLeast $Got $PreferredVersion) { return }
-    Write-SetupWarning ("computer-use {0}.{1}.{2} is installed. tree --element targeting, --app/--window, --tier, policy check, batch, and browser need {3}.{4}.{5}; re-run setup once it is released, or cargo install computer-use --locked." -f `
+    Write-SetupWarning ("computer-use {0}.{1}.{2} is installed. The tree, element targeting, batch, browser, and --state-diff surface need {3}.{4}.{5}. Run setup.ps1 -Force, or cargo install computer-use --locked." -f `
         $Got[0], $Got[1], $Got[2], $PreferredVersion[0], $PreferredVersion[1], $PreferredVersion[2])
 }
 
@@ -223,7 +238,15 @@ function Install-ReleaseZip {
     }
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     $dest = Join-Path $InstallDir $BinaryName
-    Copy-Item -LiteralPath $exe.FullName -Destination $dest -Force
+    $staged = Join-Path $InstallDir "$BinaryName.new"
+    # Move replaces the file in one step. Copy over a running binary fails on
+    # Windows.
+    try {
+        Move-Item -LiteralPath $exe.FullName -Destination $staged -Force
+    } catch {
+        Copy-Item -LiteralPath $exe.FullName -Destination $staged -Force
+    }
+    Move-Item -LiteralPath $staged -Destination $dest -Force
     Unblock-File -LiteralPath $dest
     return $dest
 }
@@ -302,7 +325,9 @@ if ($Help) {
 $needInstall = $true
 Resolve-ReleaseTag
 $existing = Get-ComputerUseCommand
-if ($existing) {
+if ($Force) {
+    Write-Log "forced reinstall requested"
+} elseif ($existing) {
     $current = Get-InstalledVersion $existing
     if (Test-VersionAcceptable $current) {
         Write-Log "computer-use already installed at $existing"
