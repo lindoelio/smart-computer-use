@@ -97,8 +97,14 @@ jobs:
                   if stripped.startswith("version:"):
                       version = stripped.split(":", 1)[1].strip().strip('"').strip("'")
                       break
-          if version != "0.3.0":
-              problems.append(f"metadata.version is {version!r}")
+          import json
+          golden = json.loads(
+              Path("skills/smart-computer-use/references/cli-surface.json").read_text(encoding="utf-8")
+          )
+          if version != golden["cli_version"]:
+              problems.append(
+                  f"metadata.version is {version!r} but the pinned CLI is {golden['cli_version']!r}"
+              )
           if "metadata" not in front:
               problems.append("metadata block is missing")
           if problems:
@@ -130,7 +136,11 @@ jobs:
         run: python3 -c "import json;json.load(open('skills.sh.json'))"
 
   cli-surface:
-    runs-on: ubuntu-latest
+    # The macOS runner, because the macOS release binary runs there without
+    # the X11 and PipeWire libraries the Linux build links against. The
+    # surface itself is the same on every platform: one clap definition and
+    # one action enum.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -139,7 +149,7 @@ jobs:
           set -euo pipefail
           version=$(python3 -c "import json;print(json.load(open('skills/smart-computer-use/references/cli-surface.json'))['cli_version'])")
           base="https://github.com/lindoelio/computer-use/releases/download/v${version}"
-          asset="computer-use-linux-x64.tar.gz"
+          asset="computer-use-macos-arm64.tar.gz"
           mkdir -p /tmp/cli
           if ! curl -fsSL --retry 3 -o "/tmp/cli/${asset}" "${base}/${asset}"; then
             echo "release v${version} is not published yet; the surface comparison is skipped"
@@ -147,7 +157,7 @@ jobs:
             exit 0
           fi
           curl -fsSL --retry 3 -o "/tmp/cli/${asset}.sha256" "${base}/${asset}.sha256"
-          (cd /tmp/cli && sha256sum -c "${asset}.sha256")
+          (cd /tmp/cli && shasum -a 256 -c "${asset}.sha256")
           tar -xzf "/tmp/cli/${asset}" -C /tmp/cli
           chmod +x /tmp/cli/computer-use
           python3 skills/smart-computer-use/scripts/lint-skill.py \
