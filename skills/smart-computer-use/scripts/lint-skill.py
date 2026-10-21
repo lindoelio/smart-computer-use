@@ -219,7 +219,7 @@ def check_loop(root: Path, report: Report) -> None:
     mutating = re.compile(
         r"computer-use\s+(press|set-value|select-text|perform-action|focus|"
         r"click|type|key|hold-key|drag|mouse-down|mouse-up|scroll-to|zoom|"
-        r"move|scroll|launch|activate|quit)\b[^\n`]*"
+        r"move|scroll|launch|activate|quit|batch)\b[^\n`]*"
     )
     for path in skill_files(root):
         for line in read(path).splitlines():

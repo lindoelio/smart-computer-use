@@ -100,7 +100,7 @@ Repeat until the goal is met or the user stops. Keep each action small.
    ```bash
    computer-use click --session notes --x 120 --y 240
    ```
-   Get coordinates from the screenshot's `image_to_screen` map, not from `scale`.
+   Get coordinates from the screenshot's `image_to_screen` map, not `scale`.
 
 5. **Handle `stale_element` by re-reading, never by retrying.** The UI changed under you: a different role, identifier, or frame on the cached path, or a new revision header. The action did not happen; the body carries the new tree.
    ```bash
@@ -116,7 +116,7 @@ Repeat until the goal is met or the user stops. Keep each action small.
 
 7. **Batch a known, safe sequence.**
    ```bash
-   computer-use batch '{"action":"batch","app":"Notes","actions":[
+   computer-use batch --session notes '{"action":"batch","app":"Notes","actions":[
      {"action":"click","element":12},
      {"action":"set_value","element":4,"value":"hi"}]}'
    ```
