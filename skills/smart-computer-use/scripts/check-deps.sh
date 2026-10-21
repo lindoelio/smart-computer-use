@@ -854,7 +854,11 @@ check_identity() {
   bundled=${line%%$'\t'*}
   bundle_id=${line#*$'\t'}
   if [[ "${bundled}" == "true" ]]; then
-    add_check "identity" "ok" "The binary runs inside the app bundle (${bundle_id:-unknown bundle id}). The macOS permission grant belongs to the app, not to the program that started it."
+    if [[ -n "${bundle_id}" ]]; then
+      add_check "identity" "ok" "The binary runs inside the app bundle (${bundle_id}). The macOS permission grant belongs to the app, not to the program that started it."
+    else
+      add_check "identity" "ok" "The binary runs inside the app bundle. The macOS permission grant belongs to the app, not to the program that started it. The bundle id is not reported because the bundle is ad-hoc signed."
+    fi
   else
     add_check "identity" "warn" "The binary runs outside the app bundle, so the macOS permission grant belongs to the program that started it and changes with the host. Run scripts/setup.sh to install the bundle and keep the grant stable."
   fi

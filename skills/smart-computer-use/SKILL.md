@@ -40,7 +40,7 @@ Pin a release with `COMPUTER_USE_VERSION`; force a reinstall with `--force` (`-F
 
 Check permissions, the CLI version, and the permission identity with `bash scripts/check-deps.sh` (`--json` for a machine-readable report). The `cli` check reports `outdated` for a binary older than 0.3.0; the script exits 1.
 
-Laya is optional and never required: `bash scripts/setup.sh --with-laya` installs it without prompting; a failed install must not stop the task.
+Laya is optional: `bash scripts/setup.sh --with-laya` installs it without prompting; a failed install must not stop the task.
 
 ## 3. Permissions first
 
@@ -54,13 +54,13 @@ computer-use doctor --open-settings   # open the first missing pane (macOS)
 
 `doctor` returns `permissions_ok` and `missing`. It exits 0 whenever the report was produced, so branch on `permissions_ok`, not the exit code. `fix` is an **array parallel to `missing`**: index `i` of `fix` describes `missing[i]` and names the pane to open. `fixes` holds the same entries as one-line strings.
 
-`doctor` also reports `identity`: whether the binary runs inside the app bundle, its bundle id, and which program owns the grant. Outside the bundle the grant follows whoever started it.
+`doctor` also reports `identity`: whether the binary runs inside the app bundle, its bundle id, and which program owns the grant. Outside the bundle the grant follows whoever started it. An ad-hoc signed bundle reports no id.
 
 Do not retry a `permission_required` action — the grant is missing, not the argument. Say which pane to open and stop.
 
 ## 4. Main loop
 
-Repeat until the goal is met or the user stops. Keep each action small.
+Repeat until the goal is met or the user stops. Keep actions small.
 
 **Always pass `--session <id>` on every command of a flow.** The default session is the process id, so a fresh `computer-use` process starts with an empty cache: the baseline does not survive between commands and every observation pays for the whole tree again. Pick one id per flow, e.g. `--session notes`.
 
@@ -71,7 +71,7 @@ Repeat until the goal is met or the user stops. Keep each action small.
    ```
    Pass `--app "<name or bundle id>"` and `--window <index|id:N|title>` on every later command: naming the target makes element indices meaningful.
 
-2. **Observe.** Read the tree, not the pixels, when the app exposes accessibility.
+2. **Observe.** Read the tree, not the pixels, when accessibility exists.
    ```bash
    computer-use tree --session notes --app Notes --window 0 --full   # first time
    computer-use tree --session notes --app Notes --window 0          # after that: only what changed
@@ -80,7 +80,7 @@ Repeat until the goal is met or the user stops. Keep each action small.
 
    A diff line starts with `+` (added), `-` (removed), `~` (changed value: `~ [9] AXTextField value: "old" -> "new"`).
 
-   `tree` returns `permission_required` when Accessibility is off, and an empty accessibility field on a platform that exposes none; `get-state` is the fallback for orientation. A read-only command can still be refused: `get-state` returns `policy_denied` when the frontmost app is on the deny list.
+   `tree` returns `permission_required` when Accessibility is off, and an empty accessibility field on a platform that exposes none; `get-state` is the fallback. A read-only command can still be refused: `get-state` returns `policy_denied` when the frontmost app is on the deny list.
 
 3. **Empty tree?** Fall back to pixels, then OCR.
    ```bash
@@ -106,7 +106,7 @@ Repeat until the goal is met or the user stops. Keep each action small.
    ```bash
    computer-use tree --session notes --app Notes --window 0 --full   # fresh indices
    ```
-   Do not re-send the same `--element N`; re-derive it. If the element is gone, re-plan.
+   Do not re-send the same `--element N`; re-derive it. If it is gone, re-plan.
 
 6. **Verify in the same round trip.** `--state-diff` on a mutating action returns the post-action delta without a second call, and becomes the next baseline: one command per step.
    ```bash
@@ -120,9 +120,9 @@ Repeat until the goal is met or the user stops. Keep each action small.
      {"action":"click","element":12},
      {"action":"set_value","element":4,"value":"hi"}]}'
    ```
-   One resolved target, one revision sequence, each step re-validated. `stop_on_error` defaults true and reports `stopped_at` with the failed step's index. A nested batch is `invalid_arguments`. A step's own `--state` is ignored: the batch attaches one post-state at the end. Batch state-changing steps; keep confirmation between them.
+   One resolved target, one revision sequence, each step re-validated. `stop_on_error` defaults true and reports `stopped_at` with the failed step's index. A nested batch is `invalid_arguments`. A step's own `--state` is ignored: the batch attaches one post-state at the end. Batch state-changing steps only; keep confirmation between them.
 
-8. **Escalate instead of repeating.** If the screen does not match, re-observe; do not fire the same action twice. On `execution_failed`, run `bash scripts/check-deps.sh` first.
+8. **Escalate instead of repeating.** If the screen does not match, re-observe; never fire the same action twice. On `execution_failed`, run `bash scripts/check-deps.sh` first.
 
 ### Capabilities you should reach for
 
@@ -156,7 +156,7 @@ computer-use --tier ax press --app Notes --element 12
 computer-use --require-background click --app Notes --x 100 --y 200
 ```
 
-Use `--require-background` when the user is at the keyboard: it refuses the `activate` fallback and turns cursor motion into `execution_failed`. `activate` takes `<cache>/foreground.lock`, so a second concurrent session fails and names the holder pid; `--allow-foreground` skips the lock. A distinct `--session` per flow keeps parallel runs apart.
+Use `--require-background` when the user is at the keyboard: it refuses the `activate` fallback and turns cursor motion into `execution_failed`. `activate` takes `<cache>/foreground.lock`, so a second concurrent session fails and names the holder pid; `--allow-foreground` skips the lock. A distinct `--session` per flow keeps runs apart.
 
 `synthetic` uses a private macOS API, is off unless the binary was built with `skylight`, and fails closed. Do not reach for it.
 
@@ -179,7 +179,7 @@ computer-use --cdp browser navigate --url https://example.com
 computer-use --cdp --cdp-url ws://127.0.0.1:9222 browser click --selector "#submit"
 ```
 
-The port comes from scanning the `--app` pid's argv; pass `--cdp-url` when that is not possible (Windows always). Branch on both `unsupported` (not built in) and `cdp_unavailable` (built in, Chrome not attachable). `[browser].blocked_urls` is checked before the navigation and against the current page URL.
+The port comes from scanning the `--app` pid's argv; pass `--cdp-url` when that is not possible (Windows always). Branch on `unsupported` (not built in) and `cdp_unavailable` (built in, Chrome not attachable). `[browser].blocked_urls` is checked before the navigation and against the current page URL.
 
 Prefer `browser` over pixel automation: no Accessibility, no cursor motion, no screenshot.
 
