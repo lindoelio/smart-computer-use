@@ -108,7 +108,7 @@ import sys
 
 path = pathlib.Path(sys.argv[1]) / "skills/smart-computer-use/SKILL.md"
 text = path.read_text(encoding="utf-8")
-path.write_text(text.replace('version: "0.3.1"', 'version: "0.2.0"', 1), encoding="utf-8")
+path.write_text(text.replace('version: "0.3.2"', 'version: "0.2.0"', 1), encoding="utf-8")
 PY
 OUTPUT=$(lint_sandbox "${ROOT}")
 if grep -qF "targets 0.2.0" <<<"${OUTPUT}"; then

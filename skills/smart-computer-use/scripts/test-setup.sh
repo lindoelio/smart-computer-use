@@ -74,7 +74,7 @@ run_setup() {
 
 # 1. An acceptable version is left alone and nothing is downloaded.
 ROOT=$(mktemp -d "${TMPDIR:-/tmp}/setup-test.XXXXXX")
-make_sandbox "0.3.1" "${ROOT}"
+make_sandbox "0.3.2" "${ROOT}"
 run_setup "${ROOT}"
 if ! downloaded "${ROOT}"; then
   pass "an acceptable version skips the download"
@@ -96,12 +96,12 @@ fi
 #    make the script think the install is current.
 ROOT3=$(mktemp -d "${TMPDIR:-/tmp}/setup-test.XXXXXX")
 make_sandbox "0.1.0" "${ROOT3}"
-make_sandbox "0.3.1" "${ROOT3}/install" 2>/dev/null || true
+make_sandbox "0.3.2" "${ROOT3}/install" 2>/dev/null || true
 mkdir -p "${ROOT3}/install"
 cat >"${ROOT3}/install/computer-use" <<'EOF'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "--version" ]]; then
-  printf 'computer-use 0.3.1\n'
+  printf 'computer-use 0.3.2\n'
   exit 0
 fi
 printf '{"ok":true}\n'
@@ -116,7 +116,7 @@ fi
 
 # 4. --force reinstalls even when the version is acceptable.
 ROOT4=$(mktemp -d "${TMPDIR:-/tmp}/setup-test.XXXXXX")
-make_sandbox "0.3.1" "${ROOT4}"
+make_sandbox "0.3.2" "${ROOT4}"
 run_setup "${ROOT4}" --force
 if downloaded "${ROOT4}"; then
   pass "--force reinstalls an acceptable version"
@@ -126,7 +126,7 @@ fi
 
 # 5. A pinned version must match exactly.
 ROOT5=$(mktemp -d "${TMPDIR:-/tmp}/setup-test.XXXXXX")
-make_sandbox "0.3.1" "${ROOT5}"
+make_sandbox "0.3.2" "${ROOT5}"
 env PATH="${ROOT5}/bin:${PATH}" \
   COMPUTER_USE_INSTALL_DIR="${ROOT5}/install" \
   HOME="${ROOT5}" \
@@ -140,11 +140,11 @@ fi
 
 # 6. A pinned version that matches is left alone.
 ROOT6=$(mktemp -d "${TMPDIR:-/tmp}/setup-test.XXXXXX")
-make_sandbox "0.3.1" "${ROOT6}"
+make_sandbox "0.3.2" "${ROOT6}"
 env PATH="${ROOT6}/bin:${PATH}" \
   COMPUTER_USE_INSTALL_DIR="${ROOT6}/install" \
   HOME="${ROOT6}" \
-  COMPUTER_USE_VERSION="0.3.1" \
+  COMPUTER_USE_VERSION="0.3.2" \
   "${SETUP}" >"${ROOT6}/setup.out" 2>"${ROOT6}/setup.err"
 if ! downloaded "${ROOT6}"; then
   pass "a pinned version that matches is left alone"

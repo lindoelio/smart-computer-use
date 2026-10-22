@@ -4,7 +4,7 @@ Agent skill for desktop computer use. A harness such as OpenCode, Claude Code, C
 
 The CLI is a separate project. This repository is the skill: instructions, setup scripts, and reference docs. There is no Rust code here.
 
-Skill version **0.3.1**, targeting **computer-use 0.3.1**. The CLI is what makes element targeting possible: a numbered accessibility tree per window, acting by element index instead of blind coordinates, the post-action delta in the same call, input tiers, a policy subsystem with an audit log, OCR, and Chrome DevTools Protocol attach.
+Skill version **0.3.2**, targeting **computer-use 0.3.2**. The CLI is what makes element targeting possible: a numbered accessibility tree per window, acting by element index instead of blind coordinates, the post-action delta in the same call, input tiers, a policy subsystem with an audit log, OCR, and Chrome DevTools Protocol attach.
 
 Laya, a local typed decision model, is optional, experimental, and not measured. The skill works with the CLI and the harness model alone.
 
@@ -43,9 +43,9 @@ bash scripts/setup.sh --with-laya
 
 ### Release selection
 
-Setup prefers `v0.3.1`. It probes the public GitHub releases API (no auth required) and installs `v0.3.1` when that release exists. **When `v0.3.1` is not published yet it falls back to the latest release instead of failing.** A binary older than 0.3.1 is replaced, because the tree, element targeting, batch, browser, and `--state-diff` surface needs it.
+Setup prefers `v0.3.2`. It probes the public GitHub releases API (no auth required) and installs `v0.3.2` when that release exists. **When `v0.3.2` is not published yet it falls back to the latest release instead of failing.** A binary older than 0.3.2 is replaced, because the tree, element targeting, batch, browser, and `--state-diff` surface needs it.
 
-Pin a specific release tag with `COMPUTER_USE_VERSION` (`v0.3.1` or `0.3.1`). Reinstall an acceptable version with `--force`.
+Pin a specific release tag with `COMPUTER_USE_VERSION` (`v0.3.2` or `0.3.2`). Reinstall an acceptable version with `--force`.
 
 On macOS the release also ships `Computer Use.app`. Setup extracts it into `~/Applications` and points `~/.local/bin/computer-use` at it, so the macOS permission grant belongs to the app instead of to whatever program started the binary. The bundle is ad-hoc signed and not notarized.
 
@@ -125,7 +125,7 @@ skills/smart-computer-use/
 | Laya | Optional, experimental, and **not measured**: no latency or accuracy benchmark exists. The default path is the harness model. |
 | Verification | The CI compares the documented surface against a real binary, and a test proves the comparison fires on a drift. |
 
-Skill version: 0.3.1. The CLI has its own version. Setup requires a `computer-use` binary at 0.3.1 or newer, or exactly the tag `COMPUTER_USE_VERSION` pins.
+Skill version: 0.3.2. The CLI has its own version. Setup requires a `computer-use` binary at 0.3.2 or newer, or exactly the tag `COMPUTER_USE_VERSION` pins.
 
 The pinned surface lives in `skills/smart-computer-use/references/cli-surface.json`: the commands, the global flags, and the JSON action names the binary accepts. `scripts/gen-cli-surface.py` regenerates it from a binary, and the CI fails when the two disagree.
 
@@ -146,7 +146,7 @@ The loop reads the delta, so a step costs 265 bytes instead of 40 KB. The comman
 
 macOS needs Screen Recording for screenshots and Accessibility for input and the accessibility tree. Enable both for the terminal or agent host under **System Settings > Privacy & Security**. Linux support is X11 plus, with the `portal` feature, Wayland. Wayland is not a supported target of the X11-only build. Windows needs an interactive desktop session.
 
-`computer-use doctor` reports permissions and the exact pane to open. `bash scripts/check-deps.sh` reports what it can detect without changing any grant, and `bash scripts/check-deps.sh --json` prints the same report as JSON. It reports the CLI version as `outdated` when the installed binary is older than 0.3.1, and it reports whether the binary runs inside the app bundle.
+`computer-use doctor` reports permissions and the exact pane to open. `bash scripts/check-deps.sh` reports what it can detect without changing any grant, and `bash scripts/check-deps.sh --json` prints the same report as JSON. It reports the CLI version as `outdated` when the installed binary is older than 0.3.2, and it reports whether the binary runs inside the app bundle.
 
 The CLI refuses Terminals and Password Managers through a built-in deny list on every platform, refuses secure text fields outright, and can be locked down further with `~/.config/computer-use/policy.toml`.
 

@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$PreferredVersion = @(0, 3, 1)
+$PreferredVersion = @(0, 3, 2)
 $Repo = 'lindoelio/computer-use'
 $RepoUrl = "https://github.com/$Repo"
 $ApiUrl = "https://api.github.com/repos/$Repo"
@@ -35,19 +35,19 @@ Install the computer-use CLI into `$HOME\.local\bin.
   -Help       Show this help.
 
 Environment:
-  COMPUTER_USE_VERSION      Release tag to pin, for example v0.3.1 or 0.3.1.
-                            Default: v0.3.1 when that release exists, otherwise
+  COMPUTER_USE_VERSION      Release tag to pin, for example v0.3.2 or 0.3.2.
+                            Default: v0.3.2 when that release exists, otherwise
                             the latest GitHub release.
   COMPUTER_USE_INSTALL_DIR  Install directory. Default: ~\.local\bin.
 
 Release selection:
-  v0.3.1 is preferred. The script probes the GitHub releases API (no auth
-  required) and installs v0.3.0 when it is published. When it is not, it falls
+  v0.3.2 is preferred. The script probes the GitHub releases API (no auth
+  required) and installs v0.3.2 when it is published. When it is not, it falls
   back to the latest published release instead of failing.
 
 If computer-use is already on PATH or in `$HOME\.local\bin at an acceptable
-version, the download is skipped. Acceptable means >= 0.1.0, or exactly
-COMPUTER_USE_VERSION when that variable is set. A binary older than v0.3.0
+version, the download is skipped. Acceptable means >= 0.3.2, or exactly
+COMPUTER_USE_VERSION when that variable is set. A binary older than v0.3.2
 is replaced, because the tree, element targeting, batch, browser, and
 --state-diff surface needs it.
 

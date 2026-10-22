@@ -6,16 +6,16 @@ description: >
   instead of blind coordinates. Use when the user asks to control the
   computer, automate UI tasks, or interact with desktop apps or browsers.
 license: MIT
-compatibility: Requires the computer-use CLI 0.3.1 (auto-installed by scripts/setup.sh).
+compatibility: Requires the computer-use CLI 0.3.2 (auto-installed by scripts/setup.sh).
 metadata:
-  version: "0.3.1"
+  version: "0.3.2"
 ---
 
 # smart-computer-use
 
 Drive the desktop with the [`computer-use`](https://github.com/lindoelio/computer-use) CLI. Paths are relative to this skill directory.
 
-**Check the version once per session.** This loop needs 0.3.1: `--state-diff`, the `batch` and `cursor-position` commands, `code` in `policy check`. Run `bash scripts/setup.sh` if `computer-use --version` is not 0.3.1.
+**Check the version once per session.** This loop needs 0.3.2: `--state-diff`, the `batch` and `cursor-position` commands, `code` in `policy check`. Run `bash scripts/setup.sh` if `computer-use --version` is not 0.3.2.
 
 ## 1. When to use
 

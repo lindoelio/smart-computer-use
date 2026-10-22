@@ -20,15 +20,15 @@ Every action writes one JSON object to stdout. `--help` and `--version` are huma
 
 ## Version compatibility
 
-This skill targets **0.3.1**. Anything not listed in the "Works on 0.1.0" column needs 0.2.0 or 0.3.0 and fails with `invalid_arguments` (unknown subcommand, exit 2) or `unsupported` on an older binary.
+This skill targets **0.3.2**. Anything not listed in the "Works on 0.1.0" column needs 0.2.0 or 0.3.0 and fails with `invalid_arguments` (unknown subcommand, exit 2) or `unsupported` on an older binary.
 
-| Surface | Works on 0.1.0 | Needs 0.2.0 | Needs 0.3.1 |
+| Surface | Works on 0.1.0 | Needs 0.2.0 | Needs 0.3.0 |
 | --- | --- | --- | --- |
 | Subcommands | `screenshot` `click` `move` `type` `key` `scroll` `get-state` `wait` `displays` `serve` `exec` | `triple-click` `press` `set-value` `select-text` `perform-action` `scroll-to` `focus` `drag` `mouse-down` `mouse-up` `hold-key` `clipboard` `zoom` `list-apps` `list-windows` `launch` `activate` `quit` `tree` `ocr` `menu` `apple-event` `shortcuts` `dock` `spaces` `policy` `pause` `resume` `doctor` `isolation` `session` `overlay` `browser` | `batch` `cursor-position` |
 | Global flags | `--pretty` `--json` | `--app` `--window` `--element` `--require-visible` `--diff` `--full` `--session` `--state` `--screenshot` `--coord` `--adapter` `--policy` `--confirm-cmd` `--tier` `--synthetic-focus` `--allow-foreground` `--require-background` `--no-overlay` `--cdp` `--cdp-url` `--display` `--exec` | `--state-diff` |
 | Error codes | `invalid_arguments` `execution_failed` `io_error` `unsupported` | `app_not_found` `window_not_found` `element_not_found` `stale_element` `permission_required` `policy_denied` `confirm_required` `confirm_denied` `blocked_url` `paused` `cdp_unavailable` `display_unavailable` | none added; `policy check` and the `tree` response gained the `code` and `baseline` fields |
 
-Without element targeting you can only click blind coordinates. The 0.3.1 main loop in [SKILL.md](../SKILL.md) depends on `tree`, `--element`, `--app`/`--window`, `--session`, and `--state-diff`. Run `bash scripts/setup.sh` and confirm with `computer-use --version` before relying on them.
+Without element targeting you can only click blind coordinates. The 0.3.2 main loop in [SKILL.md](../SKILL.md) depends on `tree`, `--element`, `--app`/`--window`, `--session`, and `--state-diff`. Run `bash scripts/setup.sh` and confirm with `computer-use --version` before relying on them.
 
 ## Exit codes
 
